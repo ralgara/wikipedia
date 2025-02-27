@@ -13,32 +13,32 @@ Parameters:
 
 Resources:
   # S3 Bucket to store the layer code
-  # LayerBucket:
-  #   Type: AWS::S3::Bucket
-  #   DeletionPolicy: Retain
-  #   UpdateReplacePolicy: Retain
-  #   Properties:
-  #     BucketName: !Sub ${AWS::StackName}-layer-${AWS::AccountId}-${AWS::Region}
-  #     VersioningConfiguration:
-  #       Status: Enabled
-  #     PublicAccessBlockConfiguration:
-  #       BlockPublicAcls: true
-  #       BlockPublicPolicy: true
-  #       IgnorePublicAcls: true
-  #       RestrictPublicBuckets: true
+  LayerBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-layer-${AWS::AccountId}-${AWS::Region}
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
 
-  # LayerS3BucketPolicy:
-  #   Type: AWS::S3::BucketPolicy
-  #   Properties:
-  #     Bucket: !Ref LayerBucket
-  #     PolicyDocument:
-  #       Version: '2012-10-17'
-  #       Statement:
-  #         - Effect: Allow
-  #           Principal: '*'
-  #           Action:
-  #             - s3:GetObject
-  #           Resource: !Sub ${LayerBucket.Arn}/*
+  LayerS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LayerBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - s3:GetObject
+            Resource: !Sub ${LayerBucket.Arn}/*
 
   # Lambda Layer for requests package
   RequestsLayer:
@@ -306,6 +306,6 @@ Outputs:
     Description: ARN of the example Lambda function
     Value: !GetAtt ExampleFunction.Arn
 
-  # LayerBucketName:
-  #   Description: Name of the S3 bucket containing the layer package
-  #   Value: !Ref LayerBucket
+  LayerBucketName:
+    Description: Name of the S3 bucket containing the layer package
+    Value: !Ref LayerBucket
