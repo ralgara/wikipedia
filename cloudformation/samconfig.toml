@@ -7,7 +7,9 @@ use_container = true
 
 [default.deploy.parameters]
 stack_name = "wikipedia-stats-stack"
-resolve_s3 = true
+#resolve_s3 = true
+resolve_s3 = false
+s3_bucket = "aws-sam-cli-managed-default-sourcebucket-0"
 s3_prefix = "wikipedia-stats-stack"
 region = "us-east-1"
 confirm_changeset = true
