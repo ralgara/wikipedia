@@ -6,7 +6,11 @@ Scripts to create a working Wikipedia stats stack using S3 and Lambda.
 
 ## Requirements
 
-Install [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html). This will enable invoking `sam` from the shell.
+* AWS SAM CLI
+    * Install [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html). This will enable invoking `sam` from the shell to deploy CloudFormation templates.
+* AWS CLI credentials
+    * The recommended approach 
+
 
 ## Workflow
 
