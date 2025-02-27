@@ -1,0 +1,16 @@
+version = 0.1
+[default.build.parameters]
+template_file = "/Users/ralgara/code/wikipedia/cloudformation/template.yaml"
+cached = true
+parallel = true
+use_container = true
+
+[default.deploy.parameters]
+stack_name = "wikipedia-stats-stack"
+resolve_s3 = true
+s3_prefix = "wikipedia-stats-stack"
+region = "us-east-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_NAMED_IAM"
+parameter_overrides = "Environment=\"dev\""
+image_repositories = []

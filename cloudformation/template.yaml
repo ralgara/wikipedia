@@ -1,0 +1,311 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template for Python HTTP wrapper and Lambda layer solution
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Environment name for resource naming
+
+Resources:
+  # S3 Bucket to store the layer code
+  # LayerBucket:
+  #   Type: AWS::S3::Bucket
+  #   DeletionPolicy: Retain
+  #   UpdateReplacePolicy: Retain
+  #   Properties:
+  #     BucketName: !Sub ${AWS::StackName}-layer-${AWS::AccountId}-${AWS::Region}
+  #     VersioningConfiguration:
+  #       Status: Enabled
+  #     PublicAccessBlockConfiguration:
+  #       BlockPublicAcls: true
+  #       BlockPublicPolicy: true
+  #       IgnorePublicAcls: true
+  #       RestrictPublicBuckets: true
+
+  # LayerS3BucketPolicy:
+  #   Type: AWS::S3::BucketPolicy
+  #   Properties:
+  #     Bucket: !Ref LayerBucket
+  #     PolicyDocument:
+  #       Version: '2012-10-17'
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal: '*'
+  #           Action:
+  #             - s3:GetObject
+  #           Resource: !Sub ${LayerBucket.Arn}/*
+
+  # Lambda Layer for requests package
+  RequestsLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub requests-layer-${Environment}
+      Description: Layer containing requests package
+      CompatibleRuntimes:
+        - python3.8
+        - python3.9
+        - python3.10
+      Content:
+        S3Bucket: !Ref LayerBucket
+        S3Key: layer.zip
+      LicenseInfo: MIT
+
+  # Example Lambda function using the HTTP wrapper
+  ExampleFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub http-wrapper-example-${Environment}
+      Handler: app.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import http.client
+          import json
+          import urllib.parse
+          from typing import Optional, Dict, Any, Union
+
+          class HttpWrapper:
+              @staticmethod
+              def get_json(url: str) -> Optional[Dict[str, Any]]:
+                  """
+                  Fetch JSON from a URL using http.client instead of requests
+
+                  Args:
+                      url: The URL to fetch from
+
+                  Returns:
+                      Parsed JSON data as dictionary or None if request fails
+                  """
+                  parsed_url = urllib.parse.urlparse(url)
+
+                  # Get hostname and path
+                  hostname = parsed_url.netloc
+                  path = parsed_url.path
+                  if parsed_url.query:
+                      path += '?' + parsed_url.query
+
+                  # Create connection
+                  conn = http.client.HTTPSConnection(hostname) if parsed_url.scheme == 'https' else http.client.HTTPConnection(hostname)
+
+                  try:
+                      # Send GET request
+                      conn.request('GET', path)
+
+                      # Get response
+                      response = conn.getresponse()
+
+                      # Check if request was successful
+                      if response.status == 200:
+                          # Read and parse JSON
+                          data = response.read().decode('utf-8')
+                          return json.loads(data)
+                      else:
+                          print(f"Error: Received status code {response.status}")
+                          return None
+                  except Exception as e:
+                      print(f"Error: {e}")
+                      return None
+                  finally:
+                      conn.close()
+
+              @staticmethod
+              def post_json(url: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+                  """
+                  Post JSON to a URL using http.client instead of requests
+
+                  Args:
+                      url: The URL to post to
+                      data: Dictionary to be sent as JSON
+
+                  Returns:
+                      Parsed JSON response as dictionary or None if request fails
+                  """
+                  parsed_url = urllib.parse.urlparse(url)
+
+                  # Get hostname and path
+                  hostname = parsed_url.netloc
+                  path = parsed_url.path
+                  if parsed_url.query:
+                      path += '?' + parsed_url.query
+
+                  # Convert data to JSON
+                  json_data = json.dumps(data)
+
+                  # Create connection
+                  conn = http.client.HTTPSConnection(hostname) if parsed_url.scheme == 'https' else http.client.HTTPConnection(hostname)
+
+                  try:
+                      # Set headers
+                      headers = {
+                          'Content-Type': 'application/json',
+                          'Content-Length': str(len(json_data))
+                      }
+
+                      # Send POST request
+                      conn.request('POST', path, json_data, headers)
+
+                      # Get response
+                      response = conn.getresponse()
+
+                      # Check if request was successful
+                      if response.status in [200, 201]:
+                          # Read and parse JSON
+                          data = response.read().decode('utf-8')
+                          return json.loads(data)
+                      else:
+                          print(f"Error: Received status code {response.status}")
+                          return None
+                  except Exception as e:
+                      print(f"Error: {e}")
+                      return None
+                  finally:
+                      conn.close()
+
+          def lambda_handler(event, context):
+              # Example usage of HttpWrapper
+              result = HttpWrapper.get_json('https://jsonplaceholder.typicode.com/todos/1')
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'message': 'Success',
+                      'result': result
+                  })
+              }
+
+      Runtime: python3.9
+      Timeout: 30
+      MemorySize: 128
+      Layers:
+        - !Ref RequestsLayer
+
+  # IAM Role for Lambda execution
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub http-wrapper-lambda-role-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # Custom resource to create and upload the layer package
+  LayerPackageCreator:
+    Type: Custom::LayerPackageCreator
+    Properties:
+      ServiceToken: !GetAtt LayerPackageCreatorFunction.Arn
+      DestinationBucket: !Ref LayerBucket
+      DestinationKey: layer.zip
+
+  # Lambda function to create and upload the layer package
+  LayerPackageCreatorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt LayerPackageCreatorRole.Arn
+      Code:
+        ZipFile: |
+          import cfnresponse
+          import boto3
+          import os
+          import subprocess
+          import shutil
+          import tempfile
+
+          def handler(event, context):
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      # Create temporary directory
+                      temp_dir = tempfile.mkdtemp()
+                      layer_dir = os.path.join(temp_dir, 'python')
+                      os.makedirs(layer_dir)
+
+                      # Create requirements.txt
+                      with open(os.path.join(temp_dir, 'requirements.txt'), 'w') as f:
+                          f.write('requests==2.31.0\n')
+
+                      # Install requirements
+                      subprocess.check_call([
+                          'pip',
+                          'install',
+                          '-r', os.path.join(temp_dir, 'requirements.txt'),
+                          '-t', layer_dir
+                      ])
+
+                      # Create zip file
+                      shutil.make_archive(os.path.join(temp_dir, 'layer'), 'zip', temp_dir)
+
+                      # Upload to S3
+                      s3 = boto3.client('s3')
+                      s3.upload_file(
+                          os.path.join(temp_dir, 'layer.zip'),
+                          event['ResourceProperties']['DestinationBucket'],
+                          event['ResourceProperties']['DestinationKey']
+                      )
+
+                      # Cleanup
+                      shutil.rmtree(temp_dir)
+
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  else:
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})
+      Runtime: python3.9
+      Timeout: 300
+      MemorySize: 512
+
+  # IAM Role for layer package creator Lambda
+  LayerPackageCreatorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub ${LayerBucket.Arn}/*
+
+Outputs:
+  LayerArn:
+    Description: ARN of the created Lambda Layer
+    Value: !Ref RequestsLayer
+
+  LayerVersion:
+    Description: Version of the created Lambda Layer
+    Value: !GetAtt RequestsLayer.LayerVersionArn
+
+  ExampleFunctionArn:
+    Description: ARN of the example Lambda function
+    Value: !GetAtt ExampleFunction.Arn
+
+  # LayerBucketName:
+  #   Description: Name of the S3 bucket containing the layer package
+  #   Value: !Ref LayerBucket
