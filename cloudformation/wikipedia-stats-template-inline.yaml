@@ -1,0 +1,380 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Wikipedia Pageviews Analytics System'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Environment name for resource naming
+  
+  RetentionDays:
+    Type: Number
+    Default: 30
+    Description: Number of days to retain logs in CloudWatch
+
+Resources:
+  #================================================
+  # S3 BUCKETS
+  #================================================
+  RawDataBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub wikipedia-pageviews-${Environment}-${AWS::AccountId}-${AWS::Region}
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToGlacierAndExpire
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+            ExpirationInDays: 730
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  #================================================
+  # IAM ROLES
+  #================================================
+  CollectorLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt RawDataBucket.Arn
+                  - !Sub ${RawDataBucket.Arn}/*
+        - PolicyName: TimestreamAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - timestream:WriteRecords
+                  - timestream:DescribeEndpoints
+                Resource: '*'
+
+  #================================================
+  # LAMBDA FUNCTIONS
+  #================================================
+  CollectorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub wikipedia-pageviews-collector-${Environment}
+      Handler: app.lambda_handler
+      Runtime: python3.9
+      MemorySize: 512
+      Timeout: 180
+      Role: !GetAtt CollectorLambdaRole.Arn
+      InlineCode: |
+        import json
+        import os
+        import datetime
+        import logging
+        import boto3
+        import urllib.request
+        from botocore.exceptions import ClientError
+
+        # Configure logging
+        logger = logging.getLogger()
+        logger.setLevel(logging.INFO)
+
+        # Environment variables
+        BUCKET_NAME = os.environ.get('BUCKET_NAME')
+        ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
+
+        # Initialize AWS clients
+        s3_client = boto3.client('s3')
+        timestream_client = boto3.client('timestream-write')
+
+        # Constants
+        DATABASE_NAME = f'wikipedia-pageviews-{ENVIRONMENT}'
+        TABLE_NAME = 'daily_views'
+        API_BASE_URL = 'https://wikimedia.org/api/rest_v1/metrics/pageviews'
+
+        def get_yesterday_date():
+            """Get yesterday's date in YYYY/MM/DD format."""
+            yesterday = datetime.datetime.utcnow() - datetime.timedelta(days=1)
+            return yesterday.strftime('%Y/%m/%d')
+
+        def get_pageviews_data(date_str):
+            """
+            Fetch pageviews data from Wikipedia API.
+            
+            Args:
+                date_str: Date string in YYYY/MM/DD format
+            
+            Returns:
+                JSON response from the API
+            """
+            # Convert date_str from YYYY/MM/DD to YYYY/MM/DD
+            year, month, day = date_str.split('/')
+            
+            # Construct the API URL for the top 1000 pages for specified date
+            url = f"{API_BASE_URL}/top/en.wikipedia/all-access/{year}/{month}/{day}"
+            
+            logger.info(f"Fetching data from: {url}")
+            
+            try:
+                response = urllib.request.urlopen(url)
+                data = json.loads(response.read().decode('utf-8'))
+                return data
+            except Exception as e:
+                logger.error(f"Error fetching data: {str(e)}")
+                raise Exception(f"Failed to fetch data from Wikipedia API: {str(e)}")
+
+        def save_to_s3(data, date_str):
+            """
+            Save the JSON data to S3.
+            
+            Args:
+                data: JSON data to save
+                date_str: Date string in YYYY/MM/DD format
+            
+            Returns:
+                S3 object key where the data was saved
+            """
+            # Replace slashes with hyphens for the S3 key
+            date_path = date_str.replace('/', '-')
+            
+            # Create S3 object key with partitioning structure
+            year, month, day = date_str.split('/')
+            object_key = f"data/year={year}/month={month}/day={day}/pageviews-{date_path}.json"
+            
+            try:
+                s3_client.put_object(
+                    Bucket=BUCKET_NAME,
+                    Key=object_key,
+                    Body=json.dumps(data),
+                    ContentType='application/json'
+                )
+                logger.info(f"Successfully saved data to s3://{BUCKET_NAME}/{object_key}")
+                return object_key
+            except ClientError as e:
+                logger.error(f"Error saving to S3: {e}")
+                raise
+
+        def save_to_timestream(data, date_str):
+            """
+            Save aggregated metrics to Timestream.
+            
+            Args:
+                data: JSON data from the API
+                date_str: Date string in YYYY/MM/DD format
+            """
+            try:
+                # Parse the date string
+                year, month, day = date_str.split('/')
+                timestamp = int(datetime.datetime(int(year), int(month), int(day)).timestamp() * 1000)
+                
+                # Extract articles and prepare records
+                articles = data['items'][0]['articles']
+                
+                # Batch records in groups of 100 (Timestream limit)
+                batch_size = 100
+                article_batches = [articles[i:i + batch_size] for i in range(0, len(articles), batch_size)]
+                
+                for batch in article_batches:
+                    records = []
+                    
+                    for article in batch:
+                        # Clean article name for dimension value (remove special characters)
+                        article_name = article['article'].replace(':', '_')
+                        
+                        records.append({
+                            'Dimensions': [
+                                {'Name': 'article', 'Value': article_name},
+                                {'Name': 'rank', 'Value': str(article['rank'])}
+                            ],
+                            'MeasureName': 'pageviews',
+                            'MeasureValue': str(article['views']),
+                            'MeasureValueType': 'BIGINT',
+                            'Time': str(timestamp)
+                        })
+                    
+                    timestream_client.write_records(
+                        DatabaseName=DATABASE_NAME,
+                        TableName=TABLE_NAME,
+                        Records=records
+                    )
+                
+                logger.info(f"Successfully saved {len(articles)} records to Timestream")
+            except ClientError as e:
+                logger.error(f"Error saving to Timestream: {e}")
+                # Continue execution even if Timestream write fails
+                # We don't want to fail the whole function if just the metrics storage fails
+
+        def lambda_handler(event, context):
+            """
+            Main Lambda handler function.
+            
+            Args:
+                event: Lambda event data
+                context: Lambda context
+            
+            Returns:
+                Dictionary containing execution results
+            """
+            try:
+                # Get yesterday's date or date from event if provided
+                date_str = event.get('date', get_yesterday_date())
+                logger.info(f"Processing pageviews for date: {date_str}")
+                
+                # Fetch pageviews data
+                pageviews_data = get_pageviews_data(date_str)
+                
+                # Save to S3
+                s3_key = save_to_s3(pageviews_data, date_str)
+                
+                # Save to Timestream (for metrics and fast queries)
+                try:
+                    save_to_timestream(pageviews_data, date_str)
+                except Exception as e:
+                    logger.warning(f"Timestream processing failed, but continuing: {str(e)}")
+                
+                return {
+                    'statusCode': 200,
+                    'body': json.dumps({
+                        'message': f'Successfully processed pageviews data for {date_str}',
+                        's3_location': f's3://{BUCKET_NAME}/{s3_key}'
+                    })
+                }
+            except Exception as e:
+                logger.error(f"Error processing pageviews data: {str(e)}")
+                return {
+                    'statusCode': 500,
+                    'body': json.dumps({
+                        'message': f'Error processing pageviews data: {str(e)}'
+                    })
+                }
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref RawDataBucket
+          ENVIRONMENT: !Ref Environment
+      Events:
+        DailySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 1 * * ? *) # Run at 1:00 AM UTC every day
+            Enabled: true
+
+  #================================================
+  # TIMESTREAM DATABASE & TABLE
+  #================================================
+  PageviewsDatabase:
+    Type: AWS::Timestream::Database
+    Properties:
+      DatabaseName: !Sub wikipedia-pageviews-${Environment}
+
+  PageviewsTable:
+    Type: AWS::Timestream::Table
+    Properties:
+      DatabaseName: !Ref PageviewsDatabase
+      TableName: daily_views
+      RetentionProperties:
+        MemoryStoreRetentionPeriodInHours: 24
+        MagneticStoreRetentionPeriodInDays: 30
+
+  #================================================
+  # GLUE RESOURCES
+  #================================================
+  WikipediaPageviewsCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub wikipedia-pageviews-crawler-${Environment}
+      Role: !GetAtt GlueRole.Arn
+      DatabaseName: !Ref GlueDatabase
+      Schedule:
+        ScheduleExpression: cron(0 2 * * ? *)
+      Targets:
+        S3Targets:
+          - Path: !Sub s3://${RawDataBucket}/data/
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: LOG
+
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Sub wikipedia_pageviews_${Environment}
+        Description: Database for Wikipedia pageviews analytics
+
+  GlueRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt RawDataBucket.Arn
+                  - !Sub ${RawDataBucket.Arn}/*
+
+Outputs:
+  RawDataBucketName:
+    Description: S3 bucket for raw Wikipedia pageviews data
+    Value: !Ref RawDataBucket
+    Export:
+      Name: !Sub ${AWS::StackName}-RawDataBucketName
+
+  CollectorFunctionName:
+    Description: Lambda function that collects Wikipedia pageviews data
+    Value: !Ref CollectorFunction
+    Export:
+      Name: !Sub ${AWS::StackName}-CollectorFunctionName
+
+  TimestreamDatabaseName:
+    Description: Timestream database for storing Wikipedia pageviews metrics
+    Value: !Ref PageviewsDatabase
+    Export:
+      Name: !Sub ${AWS::StackName}-TimestreamDatabaseName
+
+  GlueDatabaseName:
+    Description: Glue database for querying Wikipedia pageviews data
+    Value: !Ref GlueDatabase
+    Export:
+      Name: !Sub ${AWS::StackName}-GlueDatabaseName
