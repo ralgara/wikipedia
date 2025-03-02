@@ -3,7 +3,9 @@
 import boto3
 import argparse
 import json
+import random
 from datetime import datetime, timedelta
+import time
 
 def parse_date(date_str):
     """Parse date string in YYYY-MM-DD format."""
@@ -67,9 +69,11 @@ def main():
             status_code = response['StatusCode']
             print(f"  Status code: {status_code}")
             
-            # If you want to see the response payload
-            # payload = response['Payload'].read().decode('utf-8')
-            # print(f"  Response: {payload}")
+            payload = response['Payload'].read().decode('utf-8')
+            print(f"  Response: {payload}")
+        delay = random.randint(10,1000)
+        print(f"Delay: {delay}")
+        time.sleep(delay)
     
     print(f"Invoked Lambda function '{args.function_name}' for {len(date_range)} dates.")
 
