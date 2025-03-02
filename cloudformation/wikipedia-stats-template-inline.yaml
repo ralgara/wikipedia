@@ -90,13 +90,13 @@ Resources:
       FunctionName: !Sub wikipedia-pageviews-collector-${Environment}
       Handler: app.lambda_handler
       Runtime: python3.9
-      MemorySize: 512
+      MemorySize: 8
       Timeout: 180
       Role: !GetAtt CollectorLambdaRole.Arn
       InlineCode: |
         import json
         import os
-        import datetime
+        import datetime as dt
         import logging
         import boto3
         import urllib.request
@@ -119,27 +119,46 @@ Resources:
         TABLE_NAME = 'daily_views'
         API_BASE_URL = 'https://wikimedia.org/api/rest_v1/metrics/pageviews'
 
-        def get_yesterday_date():
-            """Get yesterday's date in YYYY/MM/DD format."""
-            yesterday = datetime.datetime.utcnow() - datetime.timedelta(days=1)
-            return yesterday.strftime('%Y/%m/%d')
+        def check_object_exists(bucket_name, object_key):
+            """
+            Check if an object exists in an S3 bucket
+            
+            :param bucket_name: Name of the bucket
+            :param object_key: Key of the object to check
+            :return: True if object exists, False if not
+            """
+            s3_client = boto3.client('s3')
+            logger.info(f"check_object_exists bucket_name: {bucket_name}")
+            logger.info(f"check_object_exists object_key: {object_key}")
+            try:
+                s3_client.head_object(Bucket=bucket_name, Key=object_key)
+                logger.info(f"check_object_exists object_key: {object_key} exists")
+                return True
+            except ClientError as e:
+                # If a 404 error is returned, the object does not exist
+                if e.response['Error']['Code'] == '404':
+                    logger.info(f"check_object_exists object_key: {object_key} does not exist") 
+                    return False
+                else:
+                    # Something else went wrong
+                    logger.error(f"Error checking object existence: {e}")
+                    raise
 
-        def get_pageviews_data(date_str):
+        def get_yesterday_date() -> dt.date:
+            yesterday = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=1)
+            return yesterday.date()
+
+        def get_pageviews_data(date: dt.date):
             """
             Fetch pageviews data from Wikipedia API.
-            
-            Args:
-                date_str: Date string in YYYY/MM/DD format
             
             Returns:
                 JSON response from the API
             """
-            # Convert date_str from YYYY/MM/DD to YYYY/MM/DD
-            year, month, day = date_str.split('/')
             
             # Construct the API URL for the top 1000 pages for specified date
-            url = f"{API_BASE_URL}/top/en.wikipedia/all-access/{year}/{month}/{day}"
-            
+            url = f"{API_BASE_URL}/top/en.wikipedia/all-access/{date.year}/{date.month:02d}/{date.day:02d}"
+
             logger.info(f"Fetching data from: {url}")
             
             try:
@@ -150,24 +169,33 @@ Resources:
                 logger.error(f"Error fetching data: {str(e)}")
                 raise Exception(f"Failed to fetch data from Wikipedia API: {str(e)}")
 
-        def save_to_s3(data, date_str):
+        def get_object_key(date: dt.date) -> str:
+            """
+            Generate the S3 object key for the given date.
+            """
+            logger.info(f"get_object_key date: {date}")
+            
+            # Create S3 object key with partitioning structure
+            object_key = f"data/year={date.year}/month={date.month}/day={date.day}/pageviews-{date}.json"
+            logger.info(f"get_object_key object_key: {object_key}")
+            return object_key
+
+        def save_to_s3(data, date):
             """
             Save the JSON data to S3.
             
             Args:
                 data: JSON data to save
-                date_str: Date string in YYYY/MM/DD format
+                date: date object
             
             Returns:
                 S3 object key where the data was saved
             """
-            # Replace slashes with hyphens for the S3 key
-            date_path = date_str.replace('/', '-')
-            
-            # Create S3 object key with partitioning structure
-            year, month, day = date_str.split('/')
-            object_key = f"data/year={year}/month={month}/day={day}/pageviews-{date_path}.json"
-            
+
+            object_key = get_object_key(date)
+            path = f"s3://{BUCKET_NAME}/{object_key}"
+            logger.info(f"save_to_s3: Saving to path={path}")
+            path 
             try:
                 s3_client.put_object(
                     Bucket=BUCKET_NAME,
@@ -175,24 +203,24 @@ Resources:
                     Body=json.dumps(data),
                     ContentType='application/json'
                 )
-                logger.info(f"Successfully saved data to s3://{BUCKET_NAME}/{object_key}")
+                logger.info(f"Successfully saved data to {path}")
                 return object_key
             except ClientError as e:
                 logger.error(f"Error saving to S3: {e}")
                 raise
 
-        def save_to_timestream(data, date_str):
+        def save_to_timestream(data, date: dt.date):
             """
             Save aggregated metrics to Timestream.
             
             Args:
                 data: JSON data from the API
-                date_str: Date string in YYYY/MM/DD format
+                date: date object
             """
             try:
-                # Parse the date string
-                year, month, day = date_str.split('/')
-                timestamp = int(datetime.datetime(int(year), int(month), int(day)).timestamp() * 1000)
+                # Parse the date string !!##@@
+                dt.strptime("2020-01-01 14:00", "%Y-%m-%d %H:%M")
+                timestamp = int(dt.datetime(int(year), int(month), int(day)).timestamp() * 1000)
                 
                 # Extract articles and prepare records
                 articles = data['items'][0]['articles']
@@ -243,29 +271,48 @@ Resources:
                 Dictionary containing execution results
             """
             try:
-                # Get yesterday's date or date from event if provided
-                date_str = event.get('date', get_yesterday_date())
-                logger.info(f"Processing pageviews for date: {date_str}")
-                
-                # Fetch pageviews data
-                pageviews_data = get_pageviews_data(date_str)
-                
-                # Save to S3
-                s3_key = save_to_s3(pageviews_data, date_str)
-                
-                # Save to Timestream (for metrics and fast queries)
-                try:
-                    save_to_timestream(pageviews_data, date_str)
-                except Exception as e:
-                    logger.warning(f"Timestream processing failed, but continuing: {str(e)}")
-                
-                return {
-                    'statusCode': 200,
-                    'body': json.dumps({
-                        'message': f'Successfully processed pageviews data for {date_str}',
-                        's3_location': f's3://{BUCKET_NAME}/{s3_key}'
-                    })
+                logger.info(f"Received event: {json.dumps(event)}")
+                logger.info(f"Lambda function ARN: {context.invoked_function_arn}")
+                logger.info(f"CloudWatch log group name: {context.log_group_name}")
+                logger.info(f"CloudWatch log stream name: {context.log_stream_name}")
+
+                if 'date' in event:
+                    logging.info(f"date found in event: {event['date']}")
+                    date = dt.datetime.strptime(event['date'], '%Y-%m-%d').date()
+                else:
+                    logger.info("date not found in event, using yesterday's date")
+                    date = get_yesterday_date()
+
+                logger.info(f"Processing pageviews for date: {date}")
+                object_key = get_object_key(date)
+                if check_object_exists(BUCKET_NAME, object_key):
+                    logger.info(f"Data for {date} already exists in S3")
+                    return {
+                        'statusCode': 200,
+                        'body': json.dumps({
+                            'message': f'Data for {date} already exists in S3',
+                        })
                 }
+                logger.info(f"Data for {date} not yet in S3. Fetching.")
+                # Fetch pageviews data
+                pageviews_data = get_pageviews_data(date)
+                logger.info(f"Saving to S3") 
+                # Save to S3
+                s3_key = save_to_s3(pageviews_data, date)
+                
+                # logger.info(f"Saving to Timestream") 
+                # try:
+                #     save_to_timestream(pageviews_data, date)
+                # except Exception as e:
+                #     logger.warning(f"Timestream processing failed, but continuing: {str(e)}")
+                
+                # return {
+                #     'statusCode': 200,
+                #     'body': json.dumps({
+                #         'message': f'Successfully processed pageviews data for {date}',
+                #         's3_location': f's3://{BUCKET_NAME}/{s3_key}'
+                #     })
+                # }
             except Exception as e:
                 logger.error(f"Error processing pageviews data: {str(e)}")
                 return {
@@ -274,6 +321,7 @@ Resources:
                         'message': f'Error processing pageviews data: {str(e)}'
                     })
                 }
+
       Environment:
         Variables:
           BUCKET_NAME: !Ref RawDataBucket
