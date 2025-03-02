@@ -176,7 +176,7 @@ Resources:
             logger.info(f"get_object_key date: {date}")
             
             # Create S3 object key with partitioning structure
-            object_key = f"data/year={date.year}/month={date.month}/day={date.day}/pageviews-{date}.json"
+            object_key = f"data/year={date.year}/month={date.month:02d}/day={date.day:02d}/pageviews-{date}.json"
             logger.info(f"get_object_key object_key: {object_key}")
             return object_key
 
@@ -321,6 +321,7 @@ Resources:
                         'message': f'Error processing pageviews data: {str(e)}'
                     })
                 }
+
 
       Environment:
         Variables:
