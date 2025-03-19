@@ -3,9 +3,7 @@ lib/**
 pyvenv.cfg
 nohup.out
 localstack/.vscode/launch.json
-localstack/volume/cache/machine.json
-localstack/volume/cache/server.test.pem
-localstack/volume/cache/server.test.pem.crt
-localstack/volume/cache/server.test.pem.key
-localstack/volume/cache/service-catalog-3_8_2_dev98-1_35_54.pickle
-share/man/man1/isympy.1
+localstack/volume/**
+share/**
+*.png
+*.log
