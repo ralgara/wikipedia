@@ -7,3 +7,4 @@ localstack/volume/**
 share/**
 *.png
 *.log
+wikipedia-pageviews.csv

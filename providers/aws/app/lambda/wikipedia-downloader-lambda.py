@@ -20,7 +20,7 @@ def download_pageviews(date):
     url = f"https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/{date.year}/{date.strftime('%m')}/{date.strftime('%d')}"
     
     try:
-        logger.info(f"Downloading data from {url}")
+        logger.warning(f"Downloading data from {url}")
         response = http.request('GET', url)
         
         if response.status != 200:
@@ -35,15 +35,16 @@ def download_pageviews(date):
         logger.error(f"Error downloading data: {str(e)}")
         raise
 
-def process_single_date(date):
+def process_single_date(date, use_bucket=True):
     """Process a single date"""
-    bucket = os.environ['BUCKET_NAME']
-    
     try:
-        # Download data
         data = download_pageviews(date)
-        
-        # Store in S3
+    except Exception as e:
+        logger.error(f"Error downloading data: {str(e)}")
+        raise
+
+    if use_bucket:
+        bucket = os.environ['BUCKET_NAME']
         s3_key = get_s3_key(date)
         logger.info(f"Storing data in s3://{bucket}/{s3_key}")
         
@@ -64,14 +65,24 @@ def process_single_date(date):
             'key': s3_key,
             'status': 'success'
         }
-        
-    except Exception as e:
-        logger.error(f"Error processing date {date}: {str(e)}")
+    else:
+        logger.info("Saving data to local file")
+        file_name = f"pageviews_{date.strftime('%Y%m%d')}.json"
+        with open(file_name, 'w') as f:
+            json.dump(data, f)
         return {
             'date': date.strftime('%Y-%m-%d'),
-            'status': 'error',
-            'error': str(e)
+            'file_name': file_name,
+            'status': 'success'
         }
+        
+    # except Exception as e:
+    #     logger.error(f"Error processing date {date}: {str(e)}")
+    #     return {
+    #         'date': date.strftime('%Y-%m-%d'),
+    #         'status': 'error',
+    #         'error': str(e)
+    #     }
 
 def lambda_handler(event, context):
     # Handle single date
@@ -112,3 +123,8 @@ def lambda_handler(event, context):
             'statusCode': 200 if result['status'] == 'success' else 500,
             'body': json.dumps(result)
         }
+
+if __name__ == "__main__":
+    lambda_handler({
+        'date': '2025-01-28'
+    }, None)
