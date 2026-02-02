@@ -20,14 +20,18 @@ from wikipedia import download_pageviews, generate_storage_key
 DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
 
 
+def get_filepath(date: datetime) -> str:
+    """Get the filepath for a date's data file."""
+    filename = f"pageviews_{date.strftime('%Y%m%d')}.json"
+    return os.path.join(DATA_DIR, filename)
+
+
 def download_date(date: datetime) -> str:
     """Download pageviews for a single date, save to data/ directory."""
     print(f"Downloading pageviews for {date.strftime('%Y-%m-%d')}...")
 
     data = download_pageviews(date)
-
-    filename = f"pageviews_{date.strftime('%Y%m%d')}.json"
-    filepath = os.path.join(DATA_DIR, filename)
+    filepath = get_filepath(date)
 
     with open(filepath, 'w') as f:
         json.dump(data, f)
@@ -41,6 +45,7 @@ def main():
     parser.add_argument('start_date', nargs='?', help='Start date (YYYY-MM-DD), default: yesterday')
     parser.add_argument('end_date', nargs='?', help='End date (YYYY-MM-DD), default: same as start')
     parser.add_argument('--preview', '-p', action='store_true', help='Preview top 5 articles instead of saving')
+    parser.add_argument('--force', '-f', action='store_true', help='Re-download even if file exists')
     args = parser.parse_args()
 
     # Parse dates
@@ -67,8 +72,14 @@ def main():
 
     current = start
     files = []
+    skipped = 0
     errors = []
     while current <= end:
+        filepath = get_filepath(current)
+        if not args.force and os.path.exists(filepath):
+            skipped += 1
+            current += timedelta(days=1)
+            continue
         try:
             filepath = download_date(current)
             files.append(filepath)
@@ -78,6 +89,8 @@ def main():
         current += timedelta(days=1)
 
     print(f"\nDownloaded {len(files)} file(s) to data/")
+    if skipped:
+        print(f"Skipped {skipped} existing file(s)")
     if errors:
         print(f"Failed: {len(errors)} date(s)", file=sys.stderr)
 
