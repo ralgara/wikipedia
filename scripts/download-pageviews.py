@@ -67,12 +67,19 @@ def main():
 
     current = start
     files = []
+    errors = []
     while current <= end:
-        filepath = download_date(current)
-        files.append(filepath)
+        try:
+            filepath = download_date(current)
+            files.append(filepath)
+        except Exception as e:
+            print(f"  Error: {e}", file=sys.stderr)
+            errors.append((current.strftime('%Y-%m-%d'), str(e)))
         current += timedelta(days=1)
 
     print(f"\nDownloaded {len(files)} file(s) to data/")
+    if errors:
+        print(f"Failed: {len(errors)} date(s)", file=sys.stderr)
 
 
 if __name__ == '__main__':
