@@ -1,6 +1,7 @@
 """AWS Lambda handler for Wikipedia pageviews collection.
 
 Uses shared library for cloud-neutral operations.
+For local testing, use scripts/download-pageviews.py instead.
 """
 
 import json
@@ -16,11 +17,7 @@ from wikipedia import download_pageviews, generate_storage_key
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Project root for local file output
-PROJECT_ROOT = os.path.join(os.path.dirname(__file__), '../../../../')
-DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
-
-# Lazy-load boto3 (not needed for local testing)
+# Lazy-load boto3
 _s3 = None
 def get_s3_client():
     global _s3
@@ -30,47 +27,34 @@ def get_s3_client():
     return _s3
 
 
-def process_single_date(date: datetime, use_bucket: bool = True) -> dict:
-    """Process a single date - fetch from API and store."""
+def process_single_date(date: datetime) -> dict:
+    """Process a single date - fetch from API and store to S3."""
+    bucket = os.environ['BUCKET_NAME']
+    key = generate_storage_key(date)
 
     # Cloud-neutral: fetch from Wikipedia API
     data = download_pageviews(date)
 
-    if use_bucket:
-        # AWS-specific: store to S3
-        bucket = os.environ['BUCKET_NAME']
-        key = generate_storage_key(date)
+    # AWS-specific: store to S3
+    logger.info(f"Storing data in s3://{bucket}/{key}")
 
-        logger.info(f"Storing data in s3://{bucket}/{key}")
-
-        get_s3_client().put_object(
-            Bucket=bucket,
-            Key=key,
-            Body=json.dumps(data),
-            ContentType='application/json',
-            Metadata={
-                'source': 'wikipedia-pageviews',
-                'date': date.strftime('%Y-%m-%d')
-            }
-        )
-
-        return {
-            'date': date.strftime('%Y-%m-%d'),
-            'bucket': bucket,
-            'key': key,
-            'status': 'success'
+    get_s3_client().put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=json.dumps(data),
+        ContentType='application/json',
+        Metadata={
+            'source': 'wikipedia-pageviews',
+            'date': date.strftime('%Y-%m-%d')
         }
-    else:
-        # Local file (for testing) - write to data/ directory
-        file_name = f"pageviews_{date.strftime('%Y%m%d')}.json"
-        file_path = os.path.join(DATA_DIR, file_name)
-        with open(file_path, 'w') as f:
-            json.dump(data, f)
-        return {
-            'date': date.strftime('%Y-%m-%d'),
-            'file_path': file_path,
-            'status': 'success'
-        }
+    )
+
+    return {
+        'date': date.strftime('%Y-%m-%d'),
+        'bucket': bucket,
+        'key': key,
+        'status': 'success'
+    }
 
 
 def lambda_handler(event, context):
@@ -113,9 +97,3 @@ def lambda_handler(event, context):
             'statusCode': 200 if result['status'] == 'success' else 500,
             'body': json.dumps(result)
         }
-
-
-if __name__ == "__main__":
-    # Local testing without S3
-    result = process_single_date(datetime(2025, 1, 28), use_bucket=False)
-    print(json.dumps(result, indent=2))

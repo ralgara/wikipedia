@@ -14,6 +14,8 @@ wikipedia/
 │   └── wikipedia/                # Wikipedia API client & utilities
 │       ├── client.py             # Fetch from Wikimedia API
 │       └── storage.py            # Storage key generation
+├── scripts/                      # Local testing & CLI tools
+│   └── download-pageviews.py     # Download pageviews locally
 ├── providers/                    # Cloud provider implementations
 │   ├── aws/                      # Amazon Web Services (implemented)
 │   │   ├── iac/                  # Infrastructure as Code
@@ -26,9 +28,9 @@ wikipedia/
 │   ├── gcp/                      # Google Cloud (stub)
 │   ├── azure/                    # Microsoft Azure (stub)
 │   └── digitalocean/             # DigitalOcean (stub)
+├── data/                         # Local test output (gitignored)
 ├── wikipedia.ipynb               # Main analysis notebook
-├── find-date-gaps.py             # Utility: find missing dates in data
-└── wikipedia-pageviews.csv       # Local data export
+└── find-date-gaps.py             # Utility: find missing dates in data
 ```
 
 ## Common Commands
@@ -59,10 +61,13 @@ python3 providers/aws/iac/cloudformation/call-pageviews-lambda-range.py \
 cd providers/aws/app/lambda && ./lambda-invoke.sh
 ```
 
-### Local Development
+### Local Testing
 ```bash
-# Run Lambda locally
-python3 providers/aws/app/lambda/wikipedia-downloader-lambda.py
+# Download pageviews locally (no cloud setup needed)
+./scripts/download-pageviews.py 2025-01-20
+
+# Preview without saving
+./scripts/download-pageviews.py --preview 2025-01-20
 
 # Find gaps in collected data
 aws s3 ls s3://BUCKET/data/ --recursive | ./find-date-gaps.py
@@ -92,10 +97,11 @@ Wikimedia Pageviews API
 
 | File | Purpose |
 |------|---------|
+| `scripts/download-pageviews.py` | Local testing - download pageviews to data/ |
 | `shared/wikipedia/client.py` | Cloud-neutral Wikipedia API client |
 | `shared/wikipedia/storage.py` | Cloud-neutral storage key generation |
-| `providers/aws/app/lambda/wikipedia-downloader-lambda.py` | AWS Lambda handler (uses shared/) |
-| `providers/aws/iac/cloudformation/wikipedia-stats-template-inline.yaml` | SAM template for all AWS resources |
+| `providers/aws/app/lambda/wikipedia-downloader-lambda.py` | AWS Lambda handler |
+| `providers/aws/iac/cloudformation/wikipedia-stats-template-inline.yaml` | SAM template for AWS resources |
 | `wikipedia.ipynb` | Main analysis notebook |
 
 ## Data Model

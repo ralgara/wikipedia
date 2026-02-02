@@ -10,34 +10,28 @@ Download Wikipedia pageviews data locally without any cloud setup:
 # Activate virtual environment
 source .venv/bin/activate
 
-# Download pageviews for a specific date
-python3 providers/aws/app/lambda/wikipedia-downloader-lambda.py
+# Download yesterday's pageviews
+./scripts/download-pageviews.py
+
+# Download a specific date
+./scripts/download-pageviews.py 2025-01-20
+
+# Download a date range
+./scripts/download-pageviews.py 2025-01-01 2025-01-07
+
+# Preview top 5 articles without saving
+./scripts/download-pageviews.py --preview 2025-01-20
 ```
 
 Output is saved to `data/`:
 
 ```bash
-# View the downloaded file
+# View downloaded files
 ls data/
-# pageviews_20250128.json
+# pageviews_20250120.json
 
 # Inspect top articles
-cat data/pageviews_20250128.json | python3 -m json.tool | head -50
-```
-
-To change the date, edit the `__main__` block in the Lambda file or run:
-
-```bash
-python3 -c "
-from datetime import datetime
-import sys, os
-sys.path.insert(0, 'shared')
-from wikipedia import download_pageviews
-import json
-
-data = download_pageviews(datetime(2025, 1, 15))
-print(json.dumps(data[:5], indent=2))
-"
+cat data/pageviews_20250120.json | python3 -m json.tool | head -50
 ```
 
 ## Project Structure
@@ -48,6 +42,8 @@ wikipedia/
 │   └── wikipedia/
 │       ├── client.py             # Wikimedia API client
 │       └── storage.py            # Storage key generation
+├── scripts/                      # Local testing & CLI tools
+│   └── download-pageviews.py     # Download pageviews locally
 ├── providers/                    # Cloud provider implementations
 │   ├── aws/                      # Amazon Web Services (implemented)
 │   │   ├── iac/                  # Infrastructure as Code
