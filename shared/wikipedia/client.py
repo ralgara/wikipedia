@@ -21,13 +21,14 @@ logger = logging.getLogger(__name__)
 WIKIMEDIA_API_BASE = "https://wikimedia.org/api/rest_v1/metrics/pageviews"
 
 
-def download_pageviews(date: datetime, project: str = "en.wikipedia", access: str = "all-access") -> list[dict]:
+def download_pageviews(date: datetime, project: str = "en.wikipedia", access: str = "all-access", user_agent: str = "WikipediaPageviewsBot/1.0") -> list[dict]:
     """Download top pageviews for a single date.
 
     Args:
         date: Date to fetch data for
         project: Wikipedia project (e.g., en.wikipedia, de.wikipedia)
         access: Access type (all-access, desktop, mobile-app, mobile-web)
+        user_agent: User-Agent header (required by Wikimedia API)
 
     Returns:
         List of article dicts with keys: article, views, rank, date
@@ -36,16 +37,18 @@ def download_pageviews(date: datetime, project: str = "en.wikipedia", access: st
         Exception: If API request fails
     """
     url = f"{WIKIMEDIA_API_BASE}/top/{project}/{access}/{date.year}/{date.strftime('%m')}/{date.strftime('%d')}"
+    headers = {"User-Agent": user_agent}
 
     logger.info(f"Fetching pageviews from {url}")
 
     if _USE_URLLIB3:
-        response = _http.request("GET", url)
+        response = _http.request("GET", url, headers=headers)
         if response.status != 200:
             raise Exception(f"API request failed with status {response.status}")
         data = json.loads(response.data.decode("utf-8"))
     else:
-        with urllib.request.urlopen(url) as response:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req) as response:
             if response.status != 200:
                 raise Exception(f"API request failed with status {response.status}")
             data = json.loads(response.read().decode("utf-8"))
