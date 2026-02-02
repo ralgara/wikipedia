@@ -51,6 +51,11 @@ def main():
 
     end = datetime.strptime(args.end_date, '%Y-%m-%d') if args.end_date else start
 
+    # Validate date order
+    if start > end:
+        print(f"Error: start date ({start.date()}) is after end date ({end.date()})", file=sys.stderr)
+        sys.exit(1)
+
     # Preview mode - just print top articles
     if args.preview:
         data = download_pageviews(start)
