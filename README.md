@@ -34,6 +34,21 @@ ls data/
 cat data/pageviews_20250120.json | python3 -m json.tool | head -50
 ```
 
+## Analysis
+
+Run the analysis notebook to explore patterns and trends:
+
+```bash
+source .venv/bin/activate
+jupyter notebook notebooks/analysis.ipynb
+```
+
+The notebook includes:
+- Summary statistics and top articles
+- Daily trends and spike detection
+- Day-of-week patterns
+- Consistency analysis (persistent articles vs one-hit wonders)
+
 ## Project Structure
 
 ```
@@ -54,8 +69,10 @@ wikipedia/
 │   ├── gcp/                      # Google Cloud (planned)
 │   ├── azure/                    # Microsoft Azure (planned)
 │   └── digitalocean/             # DigitalOcean (planned)
+├── notebooks/                    # Jupyter notebooks
+│   └── analysis.ipynb            # Main analysis notebook
 ├── data/                         # Local test output (gitignored)
-└── wikipedia.ipynb               # Analysis notebook
+└── wikipedia.ipynb               # (legacy notebook)
 ```
 
 ## Cloud Deployment (AWS)
