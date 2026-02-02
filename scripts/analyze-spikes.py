@@ -68,6 +68,49 @@ def load_data(days: int = None) -> pd.DataFrame:
     return df
 
 
+def analyze_date_coverage(df: pd.DataFrame) -> dict:
+    """Analyze date range coverage and find missing dates."""
+    dates_in_data = df['date'].dt.date.unique()
+    dates_set = set(dates_in_data)
+
+    first_date = min(dates_in_data)
+    last_date = max(dates_in_data)
+
+    # Generate all expected dates in range
+    expected_dates = pd.date_range(first_date, last_date, freq='D').date
+    expected_count = len(expected_dates)
+    actual_count = len(dates_set)
+
+    # Find missing dates
+    missing_dates = sorted([d for d in expected_dates if d not in dates_set])
+
+    # Group missing dates into ranges for cleaner display
+    missing_ranges = []
+    if missing_dates:
+        range_start = missing_dates[0]
+        range_end = missing_dates[0]
+
+        for i in range(1, len(missing_dates)):
+            if (missing_dates[i] - range_end).days == 1:
+                range_end = missing_dates[i]
+            else:
+                missing_ranges.append((range_start, range_end))
+                range_start = missing_dates[i]
+                range_end = missing_dates[i]
+        missing_ranges.append((range_start, range_end))
+
+    return {
+        'first_date': first_date,
+        'last_date': last_date,
+        'expected_days': expected_count,
+        'actual_days': actual_count,
+        'missing_days': expected_count - actual_count,
+        'density': actual_count / expected_count if expected_count > 0 else 0,
+        'missing_dates': missing_dates,
+        'missing_ranges': missing_ranges,
+    }
+
+
 def filter_content(df: pd.DataFrame) -> pd.DataFrame:
     """Filter out non-article content."""
     mask = ~df['article'].isin(FILTERED_ARTICLES)
@@ -701,6 +744,18 @@ def generate_html(stats: dict, plots: dict, periodic: list, spike_df: pd.DataFra
         for stype, count in type_counts.items():
             type_summary += f'<span class="stat-item"><strong>{stype.replace("_", " ").title()}:</strong> {count}</span>'
 
+    # Missing dates summary
+    missing_ranges_html = ''
+    if stats.get('missing_ranges'):
+        for start, end in stats['missing_ranges'][:20]:  # Limit to first 20 ranges
+            if start == end:
+                missing_ranges_html += f'<span class="badge" style="background: {COLORS["accent"]}; margin: 2px;">{start}</span> '
+            else:
+                days_in_range = (end - start).days + 1
+                missing_ranges_html += f'<span class="badge" style="background: {COLORS["accent"]}; margin: 2px;">{start} to {end} ({days_in_range}d)</span> '
+        if len(stats['missing_ranges']) > 20:
+            missing_ranges_html += f'<span class="badge" style="background: {COLORS["muted"]};">+{len(stats["missing_ranges"]) - 20} more ranges</span>'
+
     html = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -767,6 +822,23 @@ def generate_html(stats: dict, plots: dict, periodic: list, spike_df: pd.DataFra
             margin-bottom: 0.5rem;
         }}
 
+        .metric {{
+            background: {COLORS['bg']};
+            padding: 1rem;
+            border-radius: 8px;
+            text-align: center;
+        }}
+        .metric-value {{
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: {COLORS['info']};
+        }}
+        .metric-label {{
+            font-size: 0.8rem;
+            color: {COLORS['muted']};
+            margin-top: 0.25rem;
+        }}
+
         table {{
             width: 100%;
             border-collapse: collapse;
@@ -814,9 +886,32 @@ def generate_html(stats: dict, plots: dict, periodic: list, spike_df: pd.DataFra
     <div class="container">
         <header>
             <h1>Wikipedia Spike Analysis</h1>
-            <p class="subtitle">{stats['date_range']} ({stats['num_days']} days)</p>
+            <p class="subtitle">{stats['date_range']}</p>
             <p class="timestamp">Generated {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
         </header>
+
+        <section class="section">
+            <h2>Data Coverage</h2>
+            <div class="grid" style="grid-template-columns: 1fr 1fr 1fr 1fr;">
+                <div class="metric">
+                    <div class="metric-value">{stats['first_date']}</div>
+                    <div class="metric-label">First Date</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">{stats['last_date']}</div>
+                    <div class="metric-label">Last Date</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">{stats['actual_days']:,} / {stats['expected_days']:,}</div>
+                    <div class="metric-label">Days (Actual / Expected)</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value" style="color: {COLORS['success'] if stats['density'] > 0.95 else COLORS['warning'] if stats['density'] > 0.8 else COLORS['highlight']};">{stats['density']*100:.1f}%</div>
+                    <div class="metric-label">Coverage Density</div>
+                </div>
+            </div>
+            {f'<p style="margin-top: 1rem;"><strong>Missing dates ({stats["missing_days"]}):</strong></p><p style="margin-top: 0.5rem; line-height: 2;">{missing_ranges_html}</p>' if stats['missing_days'] > 0 else '<p style="color: ' + COLORS['success'] + '; margin-top: 1rem;">No missing dates - complete coverage!</p>'}
+        </section>
 
         <section class="section">
             <h2>Analysis Summary</h2>
@@ -911,8 +1006,13 @@ def main():
     filtered_df = filter_content(df)
     print(f"  Loaded {len(filtered_df):,} records")
 
-    date_range = (filtered_df['date'].min(), filtered_df['date'].max())
-    num_days = (date_range[1] - date_range[0]).days + 1
+    # Analyze date coverage
+    print("Analyzing date coverage...")
+    coverage = analyze_date_coverage(df)
+    print(f"  Date range: {coverage['first_date']} to {coverage['last_date']}")
+    print(f"  Coverage: {coverage['actual_days']}/{coverage['expected_days']} days ({coverage['density']*100:.1f}%)")
+    if coverage['missing_days'] > 0:
+        print(f"  Missing: {coverage['missing_days']} days")
 
     # Get time series
     print("Building time series...")
@@ -920,8 +1020,14 @@ def main():
     print(f"  {len(timeseries)} articles with 30+ days of data")
 
     stats = {
-        'date_range': f"{date_range[0].strftime('%Y-%m-%d')} to {date_range[1].strftime('%Y-%m-%d')}",
-        'num_days': num_days,
+        'date_range': f"{coverage['first_date']} to {coverage['last_date']}",
+        'first_date': coverage['first_date'],
+        'last_date': coverage['last_date'],
+        'expected_days': coverage['expected_days'],
+        'actual_days': coverage['actual_days'],
+        'missing_days': coverage['missing_days'],
+        'density': coverage['density'],
+        'missing_ranges': coverage['missing_ranges'],
         'articles_analyzed': len(timeseries)
     }
 
