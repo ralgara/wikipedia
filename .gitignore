@@ -8,3 +8,4 @@ share/**
 *.png
 *.log
 wikipedia-pageviews.csv
+data/*.json

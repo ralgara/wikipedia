@@ -8,8 +8,6 @@ import logging
 import os
 from datetime import datetime, timedelta
 
-import boto3
-
 # Import from shared library
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../../shared'))
@@ -18,7 +16,18 @@ from wikipedia import download_pageviews, generate_storage_key
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-s3 = boto3.client('s3')
+# Project root for local file output
+PROJECT_ROOT = os.path.join(os.path.dirname(__file__), '../../../../')
+DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
+
+# Lazy-load boto3 (not needed for local testing)
+_s3 = None
+def get_s3_client():
+    global _s3
+    if _s3 is None:
+        import boto3
+        _s3 = boto3.client('s3')
+    return _s3
 
 
 def process_single_date(date: datetime, use_bucket: bool = True) -> dict:
@@ -34,7 +43,7 @@ def process_single_date(date: datetime, use_bucket: bool = True) -> dict:
 
         logger.info(f"Storing data in s3://{bucket}/{key}")
 
-        s3.put_object(
+        get_s3_client().put_object(
             Bucket=bucket,
             Key=key,
             Body=json.dumps(data),
@@ -52,13 +61,14 @@ def process_single_date(date: datetime, use_bucket: bool = True) -> dict:
             'status': 'success'
         }
     else:
-        # Local file (for testing)
+        # Local file (for testing) - write to data/ directory
         file_name = f"pageviews_{date.strftime('%Y%m%d')}.json"
-        with open(file_name, 'w') as f:
+        file_path = os.path.join(DATA_DIR, file_name)
+        with open(file_path, 'w') as f:
             json.dump(data, f)
         return {
             'date': date.strftime('%Y-%m-%d'),
-            'file_name': file_name,
+            'file_path': file_path,
             'status': 'success'
         }
 
