@@ -58,6 +58,24 @@ Reports are saved to `reports/` and include:
 - Spike detection and analysis
 - Consistency analysis (articles always trending)
 
+### Advanced Spike Analysis
+
+Deep analysis of traffic spikes using signal processing techniques:
+
+```bash
+# Analyze last year (default)
+./scripts/analyze-spikes.py
+
+# Analyze all available data
+./scripts/analyze-spikes.py --all
+```
+
+The spike analysis report includes:
+- **Periodicity detection** (ACF) - Find yearly anniversaries, weekly patterns
+- **Spike shape classification** - Breaking news vs sustained interest vs anticipation
+- **Cross-correlation** - Discover articles that spike together
+- **Wavelet analysis** - Multi-scale time-frequency patterns
+
 ## Analysis Notebook
 
 For interactive exploration, run the Jupyter notebook:
@@ -83,7 +101,8 @@ wikipedia/
 │       └── storage.py            # Storage key generation
 ├── scripts/                      # Local testing & CLI tools
 │   ├── download-pageviews.py     # Download pageviews locally
-│   └── generate-report.py        # Generate HTML reports
+│   ├── generate-report.py        # Generate HTML reports
+│   └── analyze-spikes.py         # Advanced spike analysis
 ├── providers/                    # Cloud provider implementations
 │   ├── aws/                      # Amazon Web Services (implemented)
 │   │   ├── iac/                  # Infrastructure as Code
