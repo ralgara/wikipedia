@@ -34,9 +34,33 @@ ls data/
 cat data/pageviews_20250120.json | python3 -m json.tool | head -50
 ```
 
-## Analysis
+## Reports
 
-Run the analysis notebook to explore patterns and trends:
+Generate professional HTML reports with seaborn visualizations:
+
+```bash
+source .venv/bin/activate
+
+# Generate report for last 30 days (default)
+./scripts/generate-report.py
+
+# Last 90 days
+./scripts/generate-report.py --days 90
+
+# All available data
+./scripts/generate-report.py --all
+```
+
+Reports are saved to `reports/` and include:
+- Overview metrics and daily traffic trends
+- Top articles by total views
+- Traffic patterns by day of week
+- Spike detection and analysis
+- Consistency analysis (articles always trending)
+
+## Analysis Notebook
+
+For interactive exploration, run the Jupyter notebook:
 
 ```bash
 source .venv/bin/activate
@@ -58,7 +82,8 @@ wikipedia/
 │       ├── client.py             # Wikimedia API client
 │       └── storage.py            # Storage key generation
 ├── scripts/                      # Local testing & CLI tools
-│   └── download-pageviews.py     # Download pageviews locally
+│   ├── download-pageviews.py     # Download pageviews locally
+│   └── generate-report.py        # Generate HTML reports
 ├── providers/                    # Cloud provider implementations
 │   ├── aws/                      # Amazon Web Services (implemented)
 │   │   ├── iac/                  # Infrastructure as Code
@@ -72,6 +97,7 @@ wikipedia/
 ├── notebooks/                    # Jupyter notebooks
 │   └── analysis.ipynb            # Main analysis notebook
 ├── data/                         # Local test output (gitignored)
+├── reports/                      # Generated HTML reports (gitignored)
 └── wikipedia.ipynb               # (legacy notebook)
 ```
 

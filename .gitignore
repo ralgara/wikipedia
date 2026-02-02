@@ -10,3 +10,4 @@ share/**
 *.log
 wikipedia-pageviews.csv
 data/*.json
+reports/*.html
