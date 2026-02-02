@@ -1,72 +1,58 @@
-import json
-import os
-import urllib3
-from datetime import datetime, timedelta
-import logging
+"""AWS Lambda handler for Wikipedia pageviews collection.
 
-# Configure logging
+Uses shared library for cloud-neutral operations.
+"""
+
+import json
+import logging
+import os
+from datetime import datetime, timedelta
+
+import boto3
+
+# Import from shared library
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../../shared'))
+from wikipedia import download_pageviews, generate_storage_key
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Initialize clients
-http = urllib3.PoolManager()
+s3 = boto3.client('s3')
 
-def get_s3_key(date):
-    """Generate S3 key with partitioning structure"""
-    return f"wikipedia/pageviews/year={date.year}/month={date.strftime('%m')}/day={date.strftime('%d')}/pageviews_{date.strftime('%Y%m%d')}.json"
 
-def download_pageviews(date):
-    """Download pageviews data from Wikipedia API"""
-    url = f"https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/{date.year}/{date.strftime('%m')}/{date.strftime('%d')}"
-    
-    try:
-        logger.warning(f"Downloading data from {url}")
-        response = http.request('GET', url)
-        
-        if response.status != 200:
-            raise Exception(f"API request failed with status {response.status}")
+def process_single_date(date: datetime, use_bucket: bool = True) -> dict:
+    """Process a single date - fetch from API and store."""
 
-        data = response.read().decode('utf-8')
-        s = json.loads(data)
-        s = s['items'][0]
-        date = f"{s['year']}-{s['month']}-{s['day']}"
-        return [ {**z, 'date':date} for z in s['articles'] ]
-    except Exception as e:
-        logger.error(f"Error downloading data: {str(e)}")
-        raise
-
-def process_single_date(date, use_bucket=True):
-    """Process a single date"""
-    try:
-        data = download_pageviews(date)
-    except Exception as e:
-        logger.error(f"Error downloading data: {str(e)}")
-        raise
+    # Cloud-neutral: fetch from Wikipedia API
+    data = download_pageviews(date)
 
     if use_bucket:
+        # AWS-specific: store to S3
         bucket = os.environ['BUCKET_NAME']
-        s3_key = get_s3_key(date)
-        logger.info(f"Storing data in s3://{bucket}/{s3_key}")
-        
+        key = generate_storage_key(date)
+
+        logger.info(f"Storing data in s3://{bucket}/{key}")
+
         s3.put_object(
             Bucket=bucket,
-            Key=s3_key,
-            Body=data,
+            Key=key,
+            Body=json.dumps(data),
             ContentType='application/json',
             Metadata={
                 'source': 'wikipedia-pageviews',
                 'date': date.strftime('%Y-%m-%d')
             }
         )
-        
+
         return {
             'date': date.strftime('%Y-%m-%d'),
             'bucket': bucket,
-            'key': s3_key,
+            'key': key,
             'status': 'success'
         }
     else:
-        logger.info("Saving data to local file")
+        # Local file (for testing)
         file_name = f"pageviews_{date.strftime('%Y%m%d')}.json"
         with open(file_name, 'w') as f:
             json.dump(data, f)
@@ -75,17 +61,12 @@ def process_single_date(date, use_bucket=True):
             'file_name': file_name,
             'status': 'success'
         }
-        
-    # except Exception as e:
-    #     logger.error(f"Error processing date {date}: {str(e)}")
-    #     return {
-    #         'date': date.strftime('%Y-%m-%d'),
-    #         'status': 'error',
-    #         'error': str(e)
-    #     }
+
 
 def lambda_handler(event, context):
-    # Handle single date
+    """AWS Lambda entry point."""
+
+    # Single date
     if 'date' in event:
         date = datetime.strptime(event['date'], '%Y-%m-%d')
         result = process_single_date(date)
@@ -93,20 +74,19 @@ def lambda_handler(event, context):
             'statusCode': 200 if result['status'] == 'success' else 500,
             'body': json.dumps(result)
         }
-    
-    # Handle date range
+
+    # Date range
     elif 'start_date' in event and 'end_date' in event:
         start_date = datetime.strptime(event['start_date'], '%Y-%m-%d')
         end_date = datetime.strptime(event['end_date'], '%Y-%m-%d')
-        
+
         results = []
-        current_date = start_date
-        
-        while current_date <= end_date:
-            result = process_single_date(current_date)
+        current = start_date
+        while current <= end_date:
+            result = process_single_date(current)
             results.append(result)
-            current_date += timedelta(days=1)
-        
+            current += timedelta(days=1)
+
         return {
             'statusCode': 200,
             'body': json.dumps({
@@ -114,9 +94,9 @@ def lambda_handler(event, context):
                 'results': results
             })
         }
-    
+
+    # Default: yesterday
     else:
-        # Default to yesterday if no date specified
         date = datetime.utcnow() - timedelta(days=1)
         result = process_single_date(date)
         return {
@@ -124,7 +104,8 @@ def lambda_handler(event, context):
             'body': json.dumps(result)
         }
 
+
 if __name__ == "__main__":
-    lambda_handler({
-        'date': '2025-01-28'
-    }, None)
+    # Local testing without S3
+    result = process_single_date(datetime(2025, 1, 28), use_bucket=False)
+    print(json.dumps(result, indent=2))

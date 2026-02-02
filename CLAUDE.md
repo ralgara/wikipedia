@@ -10,6 +10,10 @@ Wikipedia pageviews analytics system designed for multi-cloud deployment. Collec
 
 ```
 wikipedia/
+├── shared/                       # Shared cloud-neutral library
+│   └── wikipedia/                # Wikipedia API client & utilities
+│       ├── client.py             # Fetch from Wikimedia API
+│       └── storage.py            # Storage key generation
 ├── providers/                    # Cloud provider implementations
 │   ├── aws/                      # Amazon Web Services (implemented)
 │   │   ├── iac/                  # Infrastructure as Code
@@ -88,9 +92,10 @@ Wikimedia Pageviews API
 
 | File | Purpose |
 |------|---------|
-| `providers/aws/app/lambda/wikipedia-downloader-lambda.py` | Lambda handler (fetch API, store to S3) |
+| `shared/wikipedia/client.py` | Cloud-neutral Wikipedia API client |
+| `shared/wikipedia/storage.py` | Cloud-neutral storage key generation |
+| `providers/aws/app/lambda/wikipedia-downloader-lambda.py` | AWS Lambda handler (uses shared/) |
 | `providers/aws/iac/cloudformation/wikipedia-stats-template-inline.yaml` | SAM template for all AWS resources |
-| `providers/aws/iac/cloudformation/call-pageviews-lambda-range.py` | Batch invoker for backfill |
 | `wikipedia.ipynb` | Main analysis notebook |
 
 ## Data Model
