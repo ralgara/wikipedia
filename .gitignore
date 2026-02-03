@@ -10,5 +10,6 @@ share/**
 *.log
 wikipedia-pageviews.csv
 data/*.json
+data/*.db
 reports/*.html
 **.DS_Store

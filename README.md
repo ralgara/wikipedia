@@ -136,7 +136,9 @@ sam deploy --capabilities CAPABILITY_NAMED_IAM
 
 See [providers/aws/README.md](providers/aws/README.md) for details.
 
-## Data Format
+## Data Formats
+
+### JSON Files
 
 Each daily download contains the top 1000 Wikipedia articles:
 
@@ -151,6 +153,52 @@ Each daily download contains the top 1000 Wikipedia articles:
 Storage uses Hive-style partitioning for compatibility with Athena, BigQuery, etc:
 ```
 wikipedia/pageviews/year=2025/month=01/day=28/pageviews_20250128.json
+```
+
+### SQLite Database
+
+Convert JSON files to SQLite for faster queries:
+
+```bash
+# Create database from JSON files
+./scripts/convert-to-sqlite.py
+
+# Overwrite existing database
+./scripts/convert-to-sqlite.py --force
+```
+
+The database is created at `data/pageviews.db` with optimized indexes:
+
+| Index | Columns | Optimizes |
+|-------|---------|-----------|
+| `idx_article_date` | (article, date) | Article X over time queries |
+| `idx_date` | (date) | Top articles on date Y |
+| `idx_date_views` | (date, views DESC) | Ranking queries |
+| `idx_article` | (article) | Article lookups |
+
+**Example queries:**
+
+```sql
+-- Article views over time
+SELECT date, views FROM pageviews
+WHERE article='Python_(programming_language)'
+ORDER BY date;
+
+-- Top 10 articles on a specific date
+SELECT article, views FROM pageviews
+WHERE date='2025-01-01'
+ORDER BY views DESC LIMIT 10;
+
+-- Compare two articles
+SELECT date, article, views FROM pageviews
+WHERE article IN ('ChatGPT', 'Google')
+ORDER BY date, article;
+
+-- Total views per article (all time)
+SELECT article, SUM(views) as total
+FROM pageviews
+GROUP BY article
+ORDER BY total DESC LIMIT 20;
 ```
 
 ## Requirements
