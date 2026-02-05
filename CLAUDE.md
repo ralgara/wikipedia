@@ -14,8 +14,13 @@ wikipedia/
 │   └── wikipedia/                # Wikipedia API client & utilities
 │       ├── client.py             # Fetch from Wikimedia API
 │       └── storage.py            # Storage key generation
-├── scripts/                      # Local testing & CLI tools
-│   └── download-pageviews.py     # Download pageviews locally
+├── scripts/                      # Analysis & data processing tools
+│   ├── download-pageviews.py     # Download pageviews locally
+│   ├── convert-to-sqlite.py      # Convert JSON files to SQLite DB
+│   ├── generate-report.py        # Generate HTML reports with visualizations
+│   ├── analyze-spikes.py         # Advanced spike detection (ACF, wavelets)
+│   ├── analyze-deep.py           # Deep correlation & causal inference
+│   └── wavelet-tutorial.py       # Interactive wavelet transform examples
 ├── providers/                    # Cloud provider implementations
 │   ├── aws/                      # Amazon Web Services (implemented)
 │   │   ├── iac/                  # Infrastructure as Code
@@ -28,8 +33,14 @@ wikipedia/
 │   ├── gcp/                      # Google Cloud (stub)
 │   ├── azure/                    # Microsoft Azure (stub)
 │   └── digitalocean/             # DigitalOcean (stub)
-├── data/                         # Local test output (gitignored)
-├── wikipedia.ipynb               # Main analysis notebook
+├── notebooks/                    # Jupyter notebooks for analysis
+│   └── analysis.ipynb            # Main interactive analysis notebook
+├── data/                         # Local data storage (gitignored)
+│   ├── pageviews_YYYYMMDD.json   # Daily JSON files
+│   └── pageviews.db              # SQLite database (generated)
+├── reports/                      # Generated HTML reports (gitignored)
+├── wikipedia.ipynb               # Analysis notebook
+├── wikipedia_analysis.ipynb      # Additional analysis notebook
 └── find-date-gaps.py             # Utility: find missing dates in data
 ```
 
@@ -61,13 +72,37 @@ python3 providers/aws/iac/cloudformation/call-pageviews-lambda-range.py \
 cd providers/aws/app/lambda && ./lambda-invoke.sh
 ```
 
-### Local Testing
+### Local Testing & Analysis
 ```bash
 # Download pageviews locally (no cloud setup needed)
 ./scripts/download-pageviews.py 2025-01-20
 
+# Download a date range
+./scripts/download-pageviews.py 2025-01-01 2025-01-31
+
 # Preview without saving
 ./scripts/download-pageviews.py --preview 2025-01-20
+
+# Convert JSON files to SQLite for faster queries
+./scripts/convert-to-sqlite.py
+./scripts/convert-to-sqlite.py --force  # Overwrite existing DB
+
+# Generate HTML reports with visualizations
+./scripts/generate-report.py             # Last 30 days
+./scripts/generate-report.py --days 90   # Last 90 days
+./scripts/generate-report.py --all       # All available data
+
+# Advanced spike analysis (ACF, wavelets, cross-correlation)
+./scripts/analyze-spikes.py              # Last year
+./scripts/analyze-spikes.py --all        # All data
+
+# Deep correlation analysis with causal inference
+./scripts/analyze-deep.py                # Last 365 days
+./scripts/analyze-deep.py --days 730     # Last 2 years
+./scripts/analyze-deep.py --all          # All data
+
+# Wavelet transform tutorial
+./scripts/wavelet-tutorial.py
 
 # Find gaps in collected data
 aws s3 ls s3://BUCKET/data/ --recursive | ./find-date-gaps.py
@@ -88,30 +123,76 @@ Wikimedia Pageviews API
 │ S3: wikipedia-pageviews-{env}   │  Partitioned by year/month/day
 └─────────────────────────────────┘
          │
-    ┌────┴────┐
-    ▼         ▼
- Athena    Jupyter Notebooks
+    ┌────┴─────────┐
+    ▼              ▼
+ Athena    Local JSON Files (data/)
+                   │
+                   ▼
+           ┌───────────────┐
+           │ SQLite DB     │  convert-to-sqlite.py
+           └───────────────┘
+                   │
+         ┌─────────┼─────────┐
+         ▼         ▼         ▼
+    Notebooks  Reports  Analysis Scripts
 ```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `scripts/download-pageviews.py` | Local testing - download pageviews to data/ |
+| `scripts/download-pageviews.py` | Download pageviews to local data/ directory |
+| `scripts/convert-to-sqlite.py` | Convert JSON files to SQLite database |
+| `scripts/generate-report.py` | Generate HTML reports with seaborn visualizations |
+| `scripts/analyze-spikes.py` | Advanced spike detection with signal processing |
+| `scripts/analyze-deep.py` | Deep correlation analysis & causal inference |
+| `scripts/wavelet-tutorial.py` | Interactive wavelet transform examples |
 | `shared/wikipedia/client.py` | Cloud-neutral Wikipedia API client |
 | `shared/wikipedia/storage.py` | Cloud-neutral storage key generation |
 | `providers/aws/app/lambda/wikipedia-downloader-lambda.py` | AWS Lambda handler |
 | `providers/aws/iac/cloudformation/wikipedia-stats-template-inline.yaml` | SAM template for AWS resources |
-| `wikipedia.ipynb` | Main analysis notebook |
+| `notebooks/analysis.ipynb` | Main interactive analysis notebook |
+| `find-date-gaps.py` | Find missing dates in collected data |
 
 ## Data Model
 
-JSON stored per day:
+### JSON Format
+JSON files stored per day in `data/pageviews_YYYYMMDD.json`:
 ```json
 [{"article": "Article_Name", "views": 123456, "rank": 1, "date": "2025-01-28"}, ...]
 ```
 
+### SQLite Database
+For optimized queries, JSON files can be converted to SQLite at `data/pageviews.db`:
+
+**Schema:**
+```sql
+CREATE TABLE pageviews (
+    article TEXT NOT NULL,
+    views INTEGER NOT NULL,
+    rank INTEGER NOT NULL,
+    date TEXT NOT NULL
+);
+```
+
+**Indexes:**
+- `idx_article_date` (article, date) - Article trends over time
+- `idx_date` (date) - Top articles on specific dates
+- `idx_date_views` (date, views DESC) - Ranking queries
+- `idx_article` (article) - Article lookups
+
 **Content Filtering**: `is_content()` excludes Main_Page, Special:*, User:*, Wikipedia:*, Template:*, Category:*, and *_talk: pages.
+
+## Generated Outputs
+
+### Reports Directory
+HTML reports are generated in `reports/` (gitignored):
+- `latest.html` - Most recent standard report
+- `spike_analysis.html` - Advanced spike detection report
+- `deep_analysis.html` - Correlation and causal inference report
+- `wavelet_tutorial.html` - Interactive wavelet examples
+
+Reports include embedded visualizations and are self-contained (can be shared or archived).
 
 ## Provider Service Mapping
 
@@ -124,4 +205,79 @@ JSON stored per day:
 
 ## Python Environment
 
-Python 3.12. Virtual environment at `.venv/`. Key deps: pandas, matplotlib, seaborn, plotly, boto3, statsmodels.
+Python 3.12. Virtual environment at `.venv/`.
+
+**Key dependencies:**
+- **Data analysis**: pandas, numpy
+- **Visualization**: matplotlib, seaborn, plotly
+- **Signal processing**: scipy, PyWavelets (pywt)
+- **Statistics**: statsmodels
+- **Cloud services**: boto3 (AWS)
+- **Notebooks**: jupyter
+
+## Analysis Capabilities
+
+The project includes advanced statistical and signal processing analysis:
+
+**Report Generation:**
+- HTML reports with seaborn visualizations
+- Top articles, traffic patterns, spike detection
+- Day-of-week trends and consistency analysis
+
+**Spike Detection & Analysis:**
+- Autocorrelation Function (ACF) for periodicity detection
+- Wavelet transforms for multi-scale time-frequency analysis
+- Spike shape classification (breaking news, sustained interest, anticipation)
+- Cross-correlation to find articles that spike together
+
+**Deep Analysis:**
+- Correlation analysis between article trends
+- Causal inference techniques
+- Time-series anomaly detection
+- Multi-scale pattern recognition
+
+**Performance Optimization:**
+- SQLite database for fast queries on large datasets
+- Optimized indexes for common query patterns
+- Efficient date range filtering
+
+## Recommended Workflow
+
+1. **Data Collection:**
+   ```bash
+   # Download data for date range
+   ./scripts/download-pageviews.py 2025-01-01 2025-01-31
+   ```
+
+2. **Database Conversion** (optional but recommended for large datasets):
+   ```bash
+   # Convert JSON to SQLite for faster analysis
+   ./scripts/convert-to-sqlite.py
+   ```
+
+3. **Generate Reports:**
+   ```bash
+   # Standard report
+   ./scripts/generate-report.py --days 30
+
+   # Advanced spike analysis
+   ./scripts/analyze-spikes.py
+
+   # Deep correlation analysis
+   ./scripts/analyze-deep.py
+   ```
+
+4. **Interactive Analysis:**
+   ```bash
+   # Open Jupyter for custom analysis
+   jupyter notebook notebooks/analysis.ipynb
+   ```
+
+## Tips & Best Practices
+
+- **Use SQLite for large datasets**: For datasets > 100 days, convert to SQLite for significantly faster queries
+- **Run analysis scripts in order**: Generate standard reports first to understand the data, then run spike/deep analysis
+- **Date ranges**: Start with smaller date ranges (30-90 days) to validate analysis before running on full dataset
+- **Report outputs**: All reports are self-contained HTML files with embedded visualizations
+- **Script output**: Analysis scripts save results to `reports/` directory with timestamped filenames
+- **Missing data**: Use `find-date-gaps.py` to identify gaps in your dataset before analysis
