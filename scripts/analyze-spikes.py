@@ -12,6 +12,7 @@ import base64
 import io
 import json
 import os
+import sys
 from collections import defaultdict
 from datetime import datetime
 from glob import glob
@@ -27,6 +28,10 @@ from scipy import signal
 from scipy.stats import zscore
 from scipy.ndimage import gaussian_filter1d
 import pywt
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared.wikipedia.filters import is_content
 
 DATA_DIR = Path(__file__).parent.parent / 'data'
 REPORTS_DIR = Path(__file__).parent.parent / 'reports'
@@ -44,9 +49,7 @@ COLORS = {
     'info': '#00adb5',
 }
 
-# Content to filter out
-FILTERED_PREFIXES = ('Special:', 'Wikipedia:', 'User:', 'Talk:', 'File:', 'Template:', 'Help:', 'Category:', 'Portal:')
-FILTERED_ARTICLES = {'Main_Page', '-'}
+# Filtering is now done via shared.wikipedia.filters.is_content()
 
 
 def load_data(days: int = None) -> pd.DataFrame:
@@ -112,10 +115,8 @@ def analyze_date_coverage(df: pd.DataFrame) -> dict:
 
 
 def filter_content(df: pd.DataFrame) -> pd.DataFrame:
-    """Filter out non-article content."""
-    mask = ~df['article'].isin(FILTERED_ARTICLES)
-    for prefix in FILTERED_PREFIXES:
-        mask &= ~df['article'].str.startswith(prefix)
+    """Filter out non-article content using shared filtering logic."""
+    mask = df['article'].apply(is_content)
     return df[mask].copy()
 
 

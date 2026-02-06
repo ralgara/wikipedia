@@ -12,6 +12,7 @@ import base64
 import io
 import json
 import os
+import sys
 from collections import Counter, defaultdict
 from datetime import datetime
 from glob import glob
@@ -23,6 +24,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import numpy as np
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared.wikipedia.filters import is_content
 
 DATA_DIR = Path(__file__).parent.parent / 'data'
 REPORTS_DIR = Path(__file__).parent.parent / 'reports'
@@ -39,11 +44,6 @@ COLORS = {
     'warning': '#ffc93c',
     'info': '#00adb5',
 }
-
-# Content to filter out
-FILTERED_PREFIXES = ('Special:', 'Wikipedia:', 'User:', 'Talk:', 'File:', 'Template:', 'Help:', 'Category:', 'Portal:')
-FILTERED_ARTICLES = {'Main_Page', '-'}
-
 
 def load_data(days: int = None) -> pd.DataFrame:
     """Load pageview data from JSON files."""
@@ -67,10 +67,8 @@ def load_data(days: int = None) -> pd.DataFrame:
 
 
 def filter_content(df: pd.DataFrame) -> pd.DataFrame:
-    """Filter out non-article content."""
-    mask = ~df['article'].isin(FILTERED_ARTICLES)
-    for prefix in FILTERED_PREFIXES:
-        mask &= ~df['article'].str.startswith(prefix)
+    """Filter out non-article content using shared filtering logic."""
+    mask = df['article'].apply(is_content)
     return df[mask].copy()
 
 

@@ -147,8 +147,10 @@ Wikimedia Pageviews API
 | `scripts/analyze-spikes.py` | Advanced spike detection with signal processing |
 | `scripts/analyze-deep.py` | Deep correlation analysis & causal inference |
 | `scripts/wavelet-tutorial.py` | Interactive wavelet transform examples |
+| `scripts/review-flagged.py` | Manual review tool for flagged articles |
 | `shared/wikipedia/client.py` | Cloud-neutral Wikipedia API client |
 | `shared/wikipedia/storage.py` | Cloud-neutral storage key generation |
+| `shared/wikipedia/filters.py` | Content filtering logic (is_content, get_hide_reason) |
 | `providers/aws/app/lambda/wikipedia-downloader-lambda.py` | AWS Lambda handler |
 | `providers/aws/iac/cloudformation/wikipedia-stats-template-inline.yaml` | SAM template for AWS resources |
 | `notebooks/analysis.ipynb` | Main interactive analysis notebook |
@@ -171,7 +173,9 @@ CREATE TABLE pageviews (
     article TEXT NOT NULL,
     views INTEGER NOT NULL,
     rank INTEGER NOT NULL,
-    date TEXT NOT NULL
+    date TEXT NOT NULL,
+    hide INTEGER NOT NULL DEFAULT 0,
+    hide_reason TEXT
 );
 ```
 
@@ -180,8 +184,9 @@ CREATE TABLE pageviews (
 - `idx_date` (date) - Top articles on specific dates
 - `idx_date_views` (date, views DESC) - Ranking queries
 - `idx_article` (article) - Article lookups
+- `idx_hide` (hide) - Filter hidden records
 
-**Content Filtering**: `is_content()` excludes Main_Page, Special:*, User:*, Wikipedia:*, Template:*, Category:*, and *_talk: pages.
+**Content Filtering**: The database includes a `hide` column to filter non-content and flagged articles. See Content Filtering section below for details.
 
 ## Generated Outputs
 
@@ -193,6 +198,71 @@ HTML reports are generated in `reports/` (gitignored):
 - `wavelet_tutorial.html` - Interactive wavelet examples
 
 Reports include embedded visualizations and are self-contained (can be shared or archived).
+
+## Content Filtering
+
+The database includes a `hide` column to filter out non-content pages and articles flagged for review:
+
+### Filtering Logic
+
+**Non-content pages (automatically hidden):**
+- `Main_Page` - Wikipedia main page
+- `Special:*` - Special namespace (search, admin pages, etc.)
+- `User:*`, `Wikipedia:*`, `Template:*`, `Category:*`, `Portal:*`, etc.
+- Pages with `_talk:` in the name (discussion pages)
+
+**Flagged for review:**
+- Articles with keywords that may indicate adult content
+- Conservative flagging - false positives can be manually unhidden
+- Keywords include: pornography, xxx, sexual_intercourse, erotic, hentai, etc.
+
+### Using Filters in Queries
+
+**Standard queries should include `WHERE hide=0`:**
+```sql
+-- Top articles on a specific date
+SELECT article, views
+FROM pageviews
+WHERE hide=0 AND date='2025-01-01'
+ORDER BY views DESC
+LIMIT 10;
+
+-- Article trends over time
+SELECT date, views
+FROM pageviews
+WHERE hide=0 AND article='Python_(programming_language)'
+ORDER BY date;
+```
+
+### Manual Review Tools
+
+**Review flagged articles:**
+```bash
+./scripts/review-flagged.py list              # Show all flagged articles
+./scripts/review-flagged.py unhide "Article"  # Mark article as legitimate
+./scripts/review-flagged.py hide "Article"    # Manually hide an article
+./scripts/review-flagged.py hide "Article" "reason"  # Hide with custom reason
+```
+
+**Hide reasons:**
+- `main_page` - Wikipedia main page
+- `special_page` - Special: namespace (search, admin pages)
+- `talk_page` - Talk/discussion pages
+- `non_content_page` - Other non-content namespaces
+- `flagged_for_review` - Needs manual review (potential adult content)
+- `manual_block` - Manually hidden by admin
+
+### Shared Filtering Module
+
+All filtering logic is centralized in `shared/wikipedia/filters.py`:
+- `is_content(article)` - Returns False for non-content pages
+- `should_flag_for_review(article)` - Returns True for articles needing review
+- `get_hide_reason(article)` - Returns hide reason string or None
+
+Import in Python code:
+```python
+from shared.wikipedia.filters import is_content, get_hide_reason
+```
 
 ## Provider Service Mapping
 

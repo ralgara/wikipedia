@@ -14,6 +14,10 @@ import sys
 from glob import glob
 from pathlib import Path
 
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared.wikipedia.filters import get_hide_reason
+
 DATA_DIR = Path(__file__).parent.parent / 'data'
 DB_PATH = DATA_DIR / 'pageviews.db'
 
@@ -53,7 +57,9 @@ def create_database(db_path: Path) -> sqlite3.Connection:
             article TEXT NOT NULL,
             views INTEGER NOT NULL,
             rank INTEGER NOT NULL,
-            date TEXT NOT NULL
+            date TEXT NOT NULL,
+            hide INTEGER NOT NULL DEFAULT 0,
+            hide_reason TEXT
         )
     ''')
 
@@ -70,6 +76,7 @@ def create_indexes(conn: sqlite3.Connection) -> dict:
         'idx_date': '(date)',                        # Top articles on date Y
         'idx_date_views': '(date, views DESC)',      # Ranking queries
         'idx_article': '(article)',                  # Article lookups
+        'idx_hide': '(hide)',                        # Filter hidden records
     }
 
     print(f"\n{color('Creating indexes...', 'info')}")
@@ -152,6 +159,7 @@ def main():
 
     # Process files
     total_records = 0
+    total_hidden = 0
     print(f"\n{color('Loading data:', 'info')}")
 
     for i, filepath in enumerate(json_files, 1):
@@ -160,10 +168,24 @@ def main():
         with open(filepath) as f:
             data = json.load(f)
 
-        # Insert records
+        # Insert records with hide column
+        records_with_hide = []
+        for r in data:
+            hide_reason = get_hide_reason(r['article'])
+            records_with_hide.append((
+                r['article'],
+                r['views'],
+                r['rank'],
+                r['date'],
+                1 if hide_reason else 0,
+                hide_reason
+            ))
+            if hide_reason:
+                total_hidden += 1
+
         cursor.executemany(
-            'INSERT INTO pageviews (article, views, rank, date) VALUES (?, ?, ?, ?)',
-            [(r['article'], r['views'], r['rank'], r['date']) for r in data]
+            'INSERT INTO pageviews (article, views, rank, date, hide, hide_reason) VALUES (?, ?, ?, ?, ?, ?)',
+            records_with_hide
         )
 
         total_records += len(data)
@@ -178,6 +200,7 @@ def main():
 
     conn.commit()
     print(f"\n\n{color('Inserted', 'success')} {total_records:,} total records")
+    print(f"{color('Hidden', 'warning')} {total_hidden:,} records ({total_hidden/total_records*100:.1f}%)")
 
     # Create indexes
     indexes = create_indexes(conn)
@@ -195,6 +218,12 @@ def main():
 
     cursor.execute("SELECT MIN(date), MAX(date) FROM pageviews")
     date_range = cursor.fetchone()
+
+    cursor.execute("SELECT COUNT(*) FROM pageviews WHERE hide=1")
+    hidden_count = cursor.fetchone()[0]
+
+    cursor.execute("SELECT hide_reason, COUNT(*) FROM pageviews WHERE hide=1 GROUP BY hide_reason")
+    hide_reasons = cursor.fetchall()
 
     # Get index stats
     index_sizes = get_index_sizes(conn)
@@ -214,9 +243,16 @@ def main():
 
     print(f"\n{color('Statistics:', 'bold')}")
     print(f"  Total records:    {record_count:,}")
+    print(f"  Visible records:  {record_count - hidden_count:,}")
+    print(f"  Hidden records:   {hidden_count:,} ({hidden_count/record_count*100:.1f}%)")
     print(f"  Unique articles:  {article_count:,}")
     print(f"  Days covered:     {date_count}")
     print(f"  Date range:       {date_range[0]} to {date_range[1]}")
+
+    if hide_reasons:
+        print(f"\n{color('Hide reasons:', 'bold')}")
+        for reason, count in hide_reasons:
+            print(f"  {reason:25} {count:>8,}")
 
     print(f"\n{color('Indexes:', 'bold')}")
     for idx_name, columns in indexes.items():
@@ -225,9 +261,9 @@ def main():
 
     print(f"\n{color('Example queries:', 'muted')}")
     print(f"  # Article over time (uses idx_article_date)")
-    print(f"  sqlite3 {DB_PATH.name} \"SELECT date, views FROM pageviews WHERE article='Python_(programming_language)' ORDER BY date\"")
+    print(f"  sqlite3 {DB_PATH.name} \"SELECT date, views FROM pageviews WHERE hide=0 AND article='Python_(programming_language)' ORDER BY date\"")
     print(f"\n  # Top articles on a date (uses idx_date_views)")
-    print(f"  sqlite3 {DB_PATH.name} \"SELECT article, views FROM pageviews WHERE date='2025-01-01' ORDER BY views DESC LIMIT 10\"")
+    print(f"  sqlite3 {DB_PATH.name} \"SELECT article, views FROM pageviews WHERE hide=0 AND date='2025-01-01' ORDER BY views DESC LIMIT 10\"")
 
     print()
 

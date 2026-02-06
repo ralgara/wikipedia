@@ -98,11 +98,14 @@ wikipedia/
 ├── shared/                       # Cloud-neutral library
 │   └── wikipedia/
 │       ├── client.py             # Wikimedia API client
-│       └── storage.py            # Storage key generation
+│       ├── storage.py            # Storage key generation
+│       └── filters.py            # Content filtering logic
 ├── scripts/                      # Local testing & CLI tools
 │   ├── download-pageviews.py     # Download pageviews locally
+│   ├── convert-to-sqlite.py      # Convert JSON to SQLite
 │   ├── generate-report.py        # Generate HTML reports
-│   └── analyze-spikes.py         # Advanced spike analysis
+│   ├── analyze-spikes.py         # Advanced spike analysis
+│   └── review-flagged.py         # Review flagged articles
 ├── providers/                    # Cloud provider implementations
 │   ├── aws/                      # Amazon Web Services (implemented)
 │   │   ├── iac/                  # Infrastructure as Code
@@ -167,7 +170,21 @@ Convert JSON files to SQLite for faster queries:
 ./scripts/convert-to-sqlite.py --force
 ```
 
-The database is created at `data/pageviews.db` with optimized indexes:
+The database is created at `data/pageviews.db` with optimized indexes and content filtering:
+
+**Schema:**
+```sql
+CREATE TABLE pageviews (
+    article TEXT NOT NULL,
+    views INTEGER NOT NULL,
+    rank INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    hide INTEGER NOT NULL DEFAULT 0,
+    hide_reason TEXT
+);
+```
+
+**Indexes:**
 
 | Index | Columns | Optimizes |
 |-------|---------|-----------|
@@ -175,31 +192,56 @@ The database is created at `data/pageviews.db` with optimized indexes:
 | `idx_date` | (date) | Top articles on date Y |
 | `idx_date_views` | (date, views DESC) | Ranking queries |
 | `idx_article` | (article) | Article lookups |
+| `idx_hide` | (hide) | Filter hidden records |
+
+### Content Filtering
+
+The database includes a `hide` column to filter non-content pages:
+
+**Automatically hidden:**
+- `Main_Page` - Wikipedia main page
+- `Special:*` - Special pages (search, admin tools)
+- `User:*`, `Wikipedia:*`, `Template:*`, `Category:*`, etc.
+- Pages with `_talk:` (discussion pages)
+
+**Flagged for review:**
+- Articles with keywords that may indicate adult content
+- Can be manually reviewed and unhidden if legitimate
+
+**Review flagged articles:**
+```bash
+./scripts/review-flagged.py list              # Show flagged articles
+./scripts/review-flagged.py unhide "Article"  # Mark as legitimate
+./scripts/review-flagged.py hide "Article"    # Manually hide
+```
 
 **Example queries:**
 
 ```sql
--- Article views over time
+-- Article views over time (content only)
 SELECT date, views FROM pageviews
-WHERE article='Python_(programming_language)'
+WHERE hide=0 AND article='Python_(programming_language)'
 ORDER BY date;
 
--- Top 10 articles on a specific date
+-- Top 10 articles on a specific date (content only)
 SELECT article, views FROM pageviews
-WHERE date='2025-01-01'
+WHERE hide=0 AND date='2025-01-01'
 ORDER BY views DESC LIMIT 10;
 
 -- Compare two articles
 SELECT date, article, views FROM pageviews
-WHERE article IN ('ChatGPT', 'Google')
+WHERE hide=0 AND article IN ('ChatGPT', 'Google')
 ORDER BY date, article;
 
--- Total views per article (all time)
+-- Total views per article (all time, content only)
 SELECT article, SUM(views) as total
 FROM pageviews
+WHERE hide=0
 GROUP BY article
 ORDER BY total DESC LIMIT 20;
 ```
+
+**Note:** Add `WHERE hide=0` to filter out Main_Page, Special:* pages, and flagged content.
 
 ## Requirements
 

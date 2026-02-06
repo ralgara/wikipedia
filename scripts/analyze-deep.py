@@ -12,6 +12,7 @@ import base64
 import io
 import json
 import re
+import sys
 from collections import defaultdict
 from datetime import datetime
 from glob import glob
@@ -27,6 +28,10 @@ from scipy import signal
 from scipy.stats import zscore, pearsonr
 from scipy.ndimage import gaussian_filter1d
 import pywt
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared.wikipedia.filters import is_content, should_flag_for_review
 
 DATA_DIR = Path(__file__).parent.parent / 'data'
 REPORTS_DIR = Path(__file__).parent.parent / 'reports'
@@ -44,31 +49,7 @@ COLORS = {
     'info': '#00adb5',
 }
 
-# Content to filter out - standard Wikipedia namespaces
-FILTERED_PREFIXES = (
-    'Special:', 'Wikipedia:', 'User:', 'Talk:', 'File:', 'Template:',
-    'Help:', 'Category:', 'Portal:', 'Draft:', 'Module:', 'MediaWiki:'
-)
-FILTERED_ARTICLES = {'Main_Page', '-'}
-
-# NSFW content filter - articles containing these terms are excluded
-NSFW_TERMS = {
-    'porn', 'pornograph', 'xxx', 'sex_position', 'sexual_intercourse',
-    'penis', 'vagina', 'masturbat', 'orgasm', 'erotic', 'nude', 'naked',
-    'stripper', 'escort_service', 'brothel', 'prostitut', 'adult_film',
-    'adult_video', 'adult_entertainment', 'playboy', 'penthouse_pet',
-    'sex_toy', 'vibrator', 'dildo', 'fetish', 'bdsm', 'bondage',
-    'hentai', 'rule_34', 'onlyfans', 'cam_girl', 'cam_boy',
-}
-
-
-def is_nsfw(article: str) -> bool:
-    """Check if article name suggests NSFW content."""
-    article_lower = article.lower()
-    for term in NSFW_TERMS:
-        if term in article_lower:
-            return True
-    return False
+# Filtering is now done via shared.wikipedia.filters module
 
 
 def load_data(days: int = None) -> pd.DataFrame:
@@ -91,13 +72,9 @@ def load_data(days: int = None) -> pd.DataFrame:
 
 
 def filter_content(df: pd.DataFrame) -> pd.DataFrame:
-    """Filter out non-article and NSFW content."""
-    mask = ~df['article'].isin(FILTERED_ARTICLES)
-    for prefix in FILTERED_PREFIXES:
-        mask &= ~df['article'].str.startswith(prefix)
-
-    # Filter NSFW
-    mask &= ~df['article'].apply(is_nsfw)
+    """Filter out non-article content and flagged articles using shared filtering logic."""
+    # Filter based on content type and flagged items
+    mask = df['article'].apply(lambda x: is_content(x) and not should_flag_for_review(x))
 
     return df[mask].copy()
 
