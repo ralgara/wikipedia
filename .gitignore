@@ -11,5 +11,7 @@ share/**
 wikipedia-pageviews.csv
 data/*.json
 data/*.db
+data/enriched_metadata/*.json
 reports/*.html
 **.DS_Store
+
