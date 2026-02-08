@@ -47,6 +47,7 @@ wikipedia/
 ## Common Commands
 
 ### AWS Deployment (requires AWS SAM CLI)
+
 ```bash
 cd providers/aws/iac/cloudformation
 
@@ -61,6 +62,7 @@ sam deploy --capabilities CAPABILITY_NAMED_IAM
 ```
 
 ### Lambda Invocation
+
 ```bash
 # Invoke Lambda for a date range
 python3 providers/aws/iac/cloudformation/call-pageviews-lambda-range.py \
@@ -73,6 +75,7 @@ cd providers/aws/app/lambda && ./lambda-invoke.sh
 ```
 
 ### Local Testing & Analysis
+
 ```bash
 # Download pageviews locally (no cloud setup needed)
 ./scripts/download-pageviews.py 2025-01-20
@@ -139,35 +142,39 @@ Wikimedia Pageviews API
 
 ## Key Files
 
-| File | Purpose |
-|------|---------|
-| `scripts/download-pageviews.py` | Download pageviews to local data/ directory |
-| `scripts/convert-to-sqlite.py` | Convert JSON files to SQLite database |
-| `scripts/generate-report.py` | Generate HTML reports with seaborn visualizations |
-| `scripts/analyze-spikes.py` | Advanced spike detection with signal processing |
-| `scripts/analyze-deep.py` | Deep correlation analysis & causal inference |
-| `scripts/wavelet-tutorial.py` | Interactive wavelet transform examples |
-| `scripts/review-flagged.py` | Manual review tool for flagged articles |
-| `shared/wikipedia/client.py` | Cloud-neutral Wikipedia API client |
-| `shared/wikipedia/storage.py` | Cloud-neutral storage key generation |
-| `shared/wikipedia/filters.py` | Content filtering logic (is_content, get_hide_reason) |
-| `providers/aws/app/lambda/wikipedia-downloader-lambda.py` | AWS Lambda handler |
-| `providers/aws/iac/cloudformation/wikipedia-stats-template-inline.yaml` | SAM template for AWS resources |
-| `notebooks/analysis.ipynb` | Main interactive analysis notebook |
-| `find-date-gaps.py` | Find missing dates in collected data |
+| File                                                                    | Purpose                                               |
+| ----------------------------------------------------------------------- | ----------------------------------------------------- |
+| `scripts/download-pageviews.py`                                         | Download pageviews to local data/ directory           |
+| `scripts/convert-to-sqlite.py`                                          | Convert JSON files to SQLite database                 |
+| `scripts/generate-report.py`                                            | Generate HTML reports with seaborn visualizations     |
+| `scripts/analyze-spikes.py`                                             | Advanced spike detection with signal processing       |
+| `scripts/analyze-deep.py`                                               | Deep correlation analysis & causal inference          |
+| `scripts/wavelet-tutorial.py`                                           | Interactive wavelet transform examples                |
+| `scripts/review-flagged.py`                                             | Manual review tool for flagged articles               |
+| `shared/wikipedia/client.py`                                            | Cloud-neutral Wikipedia API client                    |
+| `shared/wikipedia/storage.py`                                           | Cloud-neutral storage key generation                  |
+| `shared/wikipedia/filters.py`                                           | Content filtering logic (is_content, get_hide_reason) |
+| `providers/aws/app/lambda/wikipedia-downloader-lambda.py`               | AWS Lambda handler                                    |
+| `providers/aws/iac/cloudformation/wikipedia-stats-template-inline.yaml` | SAM template for AWS resources                        |
+| `notebooks/analysis.ipynb`                                              | Main interactive analysis notebook                    |
+| `find-date-gaps.py`                                                     | Find missing dates in collected data                  |
 
 ## Data Model
 
 ### JSON Format
+
 JSON files stored per day in `data/pageviews_YYYYMMDD.json`:
+
 ```json
 [{"article": "Article_Name", "views": 123456, "rank": 1, "date": "2025-01-28"}, ...]
 ```
 
 ### SQLite Database
+
 For optimized queries, JSON files can be converted to SQLite at `data/pageviews.db`:
 
 **Schema:**
+
 ```sql
 CREATE TABLE pageviews (
     article TEXT NOT NULL,
@@ -180,6 +187,7 @@ CREATE TABLE pageviews (
 ```
 
 **Indexes:**
+
 - `idx_article_date` (article, date) - Article trends over time
 - `idx_date` (date) - Top articles on specific dates
 - `idx_date_views` (date, views DESC) - Ranking queries
@@ -191,7 +199,9 @@ CREATE TABLE pageviews (
 ## Generated Outputs
 
 ### Reports Directory
+
 HTML reports are generated in `reports/` (gitignored):
+
 - `latest.html` - Most recent standard report
 - `spike_analysis.html` - Advanced spike detection report
 - `deep_analysis.html` - Correlation and causal inference report
@@ -206,12 +216,14 @@ The database includes a `hide` column to filter out non-content pages and articl
 ### Filtering Logic
 
 **Non-content pages (automatically hidden):**
+
 - `Main_Page` - Wikipedia main page
 - `Special:*` - Special namespace (search, admin pages, etc.)
 - `User:*`, `Wikipedia:*`, `Template:*`, `Category:*`, `Portal:*`, etc.
 - Pages with `_talk:` in the name (discussion pages)
 
 **Flagged for review:**
+
 - Articles with keywords that may indicate adult content
 - Conservative flagging - false positives can be manually unhidden
 - Keywords include: pornography, xxx, sexual_intercourse, erotic, hentai, etc.
@@ -219,6 +231,7 @@ The database includes a `hide` column to filter out non-content pages and articl
 ### Using Filters in Queries
 
 **Standard queries should include `WHERE hide=0`:**
+
 ```sql
 -- Top articles on a specific date
 SELECT article, views
@@ -237,6 +250,7 @@ ORDER BY date;
 ### Manual Review Tools
 
 **Review flagged articles:**
+
 ```bash
 ./scripts/review-flagged.py list              # Show all flagged articles
 ./scripts/review-flagged.py unhide "Article"  # Mark article as legitimate
@@ -245,6 +259,7 @@ ORDER BY date;
 ```
 
 **Hide reasons:**
+
 - `main_page` - Wikipedia main page
 - `special_page` - Special: namespace (search, admin pages)
 - `talk_page` - Talk/discussion pages
@@ -255,29 +270,32 @@ ORDER BY date;
 ### Shared Filtering Module
 
 All filtering logic is centralized in `shared/wikipedia/filters.py`:
+
 - `is_content(article)` - Returns False for non-content pages
 - `should_flag_for_review(article)` - Returns True for articles needing review
 - `get_hide_reason(article)` - Returns hide reason string or None
 
 Import in Python code:
+
 ```python
 from shared.wikipedia.filters import is_content, get_hide_reason
 ```
 
 ## Provider Service Mapping
 
-| Capability | AWS | GCP | Azure | DigitalOcean |
-|------------|-----|-----|-------|--------------|
-| Storage | S3 | Cloud Storage | Blob Storage | Spaces |
-| Compute | Lambda | Cloud Functions | Functions | App Platform |
-| Scheduling | EventBridge | Cloud Scheduler | Logic Apps | Scheduled Jobs |
-| Query | Athena | BigQuery | Data Explorer | PostgreSQL |
+| Capability | AWS         | GCP             | Azure         | DigitalOcean   |
+| ---------- | ----------- | --------------- | ------------- | -------------- |
+| Storage    | S3          | Cloud Storage   | Blob Storage  | Spaces         |
+| Compute    | Lambda      | Cloud Functions | Functions     | App Platform   |
+| Scheduling | EventBridge | Cloud Scheduler | Logic Apps    | Scheduled Jobs |
+| Query      | Athena      | BigQuery        | Data Explorer | PostgreSQL     |
 
 ## Python Environment
 
 Python 3.12. Virtual environment at `.venv/`.
 
 **Key dependencies:**
+
 - **Data analysis**: pandas, numpy
 - **Visualization**: matplotlib, seaborn, plotly
 - **Signal processing**: scipy, PyWavelets (pywt)
@@ -290,23 +308,27 @@ Python 3.12. Virtual environment at `.venv/`.
 The project includes advanced statistical and signal processing analysis:
 
 **Report Generation:**
+
 - HTML reports with seaborn visualizations
 - Top articles, traffic patterns, spike detection
 - Day-of-week trends and consistency analysis
 
 **Spike Detection & Analysis:**
+
 - Autocorrelation Function (ACF) for periodicity detection
 - Wavelet transforms for multi-scale time-frequency analysis
 - Spike shape classification (breaking news, sustained interest, anticipation)
 - Cross-correlation to find articles that spike together
 
 **Deep Analysis:**
+
 - Correlation analysis between article trends
 - Causal inference techniques
 - Time-series anomaly detection
 - Multi-scale pattern recognition
 
 **Performance Optimization:**
+
 - SQLite database for fast queries on large datasets
 - Optimized indexes for common query patterns
 - Efficient date range filtering
@@ -314,18 +336,21 @@ The project includes advanced statistical and signal processing analysis:
 ## Recommended Workflow
 
 1. **Data Collection:**
+
    ```bash
    # Download data for date range
    ./scripts/download-pageviews.py 2025-01-01 2025-01-31
    ```
 
 2. **Database Conversion** (optional but recommended for large datasets):
+
    ```bash
    # Convert JSON to SQLite for faster analysis
    ./scripts/convert-to-sqlite.py
    ```
 
 3. **Generate Reports:**
+
    ```bash
    # Standard report
    ./scripts/generate-report.py --days 30
@@ -351,3 +376,30 @@ The project includes advanced statistical and signal processing analysis:
 - **Report outputs**: All reports are self-contained HTML files with embedded visualizations
 - **Script output**: Analysis scripts save results to `reports/` directory with timestamped filenames
 - **Missing data**: Use `find-date-gaps.py` to identify gaps in your dataset before analysis
+
+## Development Guidelines
+
+> [!IMPORTANT]
+> **Backward Compatibility Rule**: Never break existing scripts except in extreme cases that require explicit approval. All changes must be incremental and maintain backward compatibility.
+
+**Key Principles**:
+
+- New features should be additive, not destructive
+- Existing scripts must continue to work without modification
+- New dependencies should be optional when possible
+- Use feature flags or separate scripts for experimental features
+- Document breaking changes clearly if absolutely necessary
+
+**Examples**:
+
+- ✅ **Good**: Add optional `--enrich` flag to existing script
+- ✅ **Good**: Create new `enrich-metadata.py` script for new functionality
+- ❌ **Bad**: Modify existing script to require new dependencies
+- ❌ **Bad**: Change output format of existing reports without flag
+
+**Pipeline Approach**:
+
+- Prefer separate scripts that can be chained together
+- Each script should have a single responsibility
+- Data flows through files (JSON, SQLite) between pipeline stages
+- Allow users to run individual pipeline stages independently
