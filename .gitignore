@@ -15,3 +15,4 @@ data/enriched_metadata/*.json
 reports/*.html
 **.DS_Store
 
+uv.lock
