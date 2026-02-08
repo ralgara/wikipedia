@@ -5,6 +5,7 @@ Usage:
     ./scripts/analyze-deep.py                    # Last 365 days
     ./scripts/analyze-deep.py --days 730         # Last 2 years
     ./scripts/analyze-deep.py --all              # All available data
+    ./scripts/analyze-deep.py --use-enriched     # Use enriched metadata (if available)
 """
 
 import argparse
@@ -33,7 +34,16 @@ import pywt
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared.wikipedia.filters import is_content, should_flag_for_review
 
+# Optional: Import graph analysis modules (only needed for --use-enriched)
+HAVE_ENRICHMENT = False
+try:
+    from shared.wikipedia.graph_analysis import ArticleGraph
+    HAVE_ENRICHMENT = True
+except ImportError:
+    pass  # Graceful fallback if modules not installed
+
 DATA_DIR = Path(__file__).parent.parent / 'data'
+ENRICHED_DIR = DATA_DIR / 'enriched_metadata'
 REPORTS_DIR = Path(__file__).parent.parent / 'reports'
 
 # Dark theme colors
@@ -747,6 +757,8 @@ def main():
     parser.add_argument('--output', '-o', help='Output filename')
     parser.add_argument('--top', '-t', type=int, default=100, help='Top N articles to analyze (default: 100)')
     parser.add_argument('--min-corr', type=float, default=0.4, help='Minimum correlation threshold (default: 0.4)')
+    parser.add_argument('--use-enriched', action='store_true',
+                        help='Use enriched metadata if available (requires enrich-metadata.py to be run first)')
     args = parser.parse_args()
 
     setup_plot_style()
@@ -756,11 +768,11 @@ def main():
     print(f"Loading data{'' if args.all else f' (last {args.days} days)'}...")
     df = load_data(days)
 
-    # Count NSFW before filtering
-    nsfw_count = df['article'].apply(is_nsfw).sum()
+    # Count filtered items
+    nsfw_count = sum(1 for article in df['article'].unique() if should_flag_for_review(article))
 
     filtered_df = filter_content(df)
-    print(f"  Loaded {len(filtered_df):,} records (filtered {nsfw_count:,} NSFW)")
+    print(f"  Loaded {len(filtered_df):,} records (filtered {nsfw_count:,} flagged)")
 
     # Analyze date coverage
     print("Analyzing date coverage...")
@@ -780,6 +792,34 @@ def main():
     interesting_count = sum(1 for p in pairs if p['type'] == 'interesting')
     print(f"  Found {len(pairs)} correlated pairs ({interesting_count} interesting)")
 
+    # Optional: Build graph and detect communities if enriched data available
+    graph_data = None
+    if args.use_enriched:
+        if not HAVE_ENRICHMENT:
+            print("\nWarning: --use-enriched specified but graph modules not installed.")
+            print("Install with: pip install networkx python-louvain")
+        elif not ENRICHED_DIR.exists():
+            print(f"\nWarning: --use-enriched specified but enriched data not found at {ENRICHED_DIR}")
+            print("Run ./scripts/enrich-metadata.py first to create enriched data.")
+        else:
+            print("\nBuilding article graph with enriched metadata...")
+            graph = ArticleGraph()
+            graph.add_correlations(pairs, min_threshold=args.min_corr)
+            graph.load_enriched_metadata(str(ENRICHED_DIR))
+            
+            communities = graph.detect_communities()
+            print(f"  Detected {len(communities)} communities")
+            
+            central_articles = graph.get_central_articles(metric='pagerank', top_n=20)
+            graph_summary = graph.get_graph_summary()
+            
+            graph_data = {
+                'communities': communities,
+                'central_articles': central_articles,
+                'summary': graph_summary,
+                'graph': graph
+            }
+
     stats = {
         'first_date': coverage['first_date'],
         'last_date': coverage['last_date'],
@@ -793,6 +833,7 @@ def main():
         'interesting_pairs': interesting_count,
         'nsfw_filtered': nsfw_count,
         'min_correlation': args.min_corr,
+        'enriched': graph_data is not None
     }
 
     # Generate plots
