@@ -6,20 +6,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wikipedia pageviews analytics system designed for multi-cloud deployment. Collects daily Wikipedia top article statistics via the Wikimedia API, stores them in cloud object storage, and provides Jupyter notebooks for analysis. Currently implemented on AWS, with planned support for GCP, Azure, and DigitalOcean.
 
+The project also serves as a vehicle for learning **multi-agent orchestration**. The `agents/` directory contains a prototype system that decomposes natural language questions about Wikipedia article performance into sub-tasks executed by specialized agents (planner, retrieval, graph/ontology, synthesis).
+
 ## Repository Structure
 
 ```
 wikipedia/
+├── agents/                       # Multi-agent orchestration (prototype)
+│   ├── orchestrator.sh           # Shell-based orchestrator (Tier 1)
+│   ├── mock_data/                # Mock data for agent development
+│   │   ├── pageviews.json        # Mock pageview database
+│   │   └── ontology.json         # Mock knowledge graph
+│   └── CONTEXT.md                # Agent architecture & design rationale
 ├── shared/                       # Shared cloud-neutral library
 │   └── wikipedia/                # Wikipedia API client & utilities
 │       ├── client.py             # Fetch from Wikimedia API
-│       └── storage.py            # Storage key generation
+│       ├── storage.py            # Storage key generation
+│       ├── filters.py            # Content filtering (is_content, get_hide_reason)
+│       ├── ontology.py           # Wikidata/DBpedia client (enrichment)
+│       └── graph_analysis.py     # NetworkX graph analysis (enrichment)
 ├── scripts/                      # Analysis & data processing tools
 │   ├── download-pageviews.py     # Download pageviews locally
 │   ├── convert-to-sqlite.py      # Convert JSON files to SQLite DB
 │   ├── generate-report.py        # Generate HTML reports with visualizations
 │   ├── analyze-spikes.py         # Advanced spike detection (ACF, wavelets)
 │   ├── analyze-deep.py           # Deep correlation & causal inference
+│   ├── enrich-metadata.py        # Wikidata/DBpedia metadata enrichment
+│   ├── review-flagged.py         # Manual review tool for flagged articles
 │   └── wavelet-tutorial.py       # Interactive wavelet transform examples
 ├── providers/                    # Cloud provider implementations
 │   ├── aws/                      # Amazon Web Services (implemented)
@@ -37,7 +50,8 @@ wikipedia/
 │   └── analysis.ipynb            # Main interactive analysis notebook
 ├── data/                         # Local data storage (gitignored)
 │   ├── pageviews_YYYYMMDD.json   # Daily JSON files
-│   └── pageviews.db              # SQLite database (generated)
+│   ├── pageviews.db              # SQLite database (generated)
+│   └── enriched_metadata/        # Enriched metadata JSON (generated)
 ├── reports/                      # Generated HTML reports (gitignored)
 ├── wikipedia.ipynb               # Analysis notebook
 ├── wikipedia_analysis.ipynb      # Additional analysis notebook
@@ -104,11 +118,32 @@ cd providers/aws/app/lambda && ./lambda-invoke.sh
 ./scripts/analyze-deep.py --days 730     # Last 2 years
 ./scripts/analyze-deep.py --all          # All data
 
+# Enrich articles with Wikidata/DBpedia metadata (optional)
+./scripts/enrich-metadata.py                   # Enrich top articles
+./scripts/enrich-metadata.py --top 50          # Top 50 articles
+./scripts/enrich-metadata.py --dry-run         # Preview without saving
+
+# Deep analysis with enrichment data
+./scripts/analyze-deep.py --use-enriched       # Graph + community analysis
+
 # Wavelet transform tutorial
 ./scripts/wavelet-tutorial.py
 
 # Find gaps in collected data
 aws s3 ls s3://BUCKET/data/ --recursive | ./find-date-gaps.py
+```
+
+### Multi-Agent Orchestration
+
+```bash
+# Run the agent orchestrator (requires Claude Code CLI)
+./agents/orchestrator.sh "How much more hits did Greenland vs Sweden get in wikipedia last year?"
+
+# The orchestrator runs 4 agents via claude -p:
+#   1. Planner: decomposes question into sub-tasks
+#   2. Retrieval: looks up pageview data (mock)
+#   3. Graph: analyzes ontology relationships (mock)
+#   4. Synthesis: merges results into markdown report
 ```
 
 ## Architecture (AWS)
@@ -149,11 +184,16 @@ Wikimedia Pageviews API
 | `scripts/generate-report.py`                                            | Generate HTML reports with seaborn visualizations     |
 | `scripts/analyze-spikes.py`                                             | Advanced spike detection with signal processing       |
 | `scripts/analyze-deep.py`                                               | Deep correlation analysis & causal inference          |
+| `scripts/enrich-metadata.py`                                            | Wikidata/DBpedia metadata enrichment pipeline         |
 | `scripts/wavelet-tutorial.py`                                           | Interactive wavelet transform examples                |
 | `scripts/review-flagged.py`                                             | Manual review tool for flagged articles               |
 | `shared/wikipedia/client.py`                                            | Cloud-neutral Wikipedia API client                    |
 | `shared/wikipedia/storage.py`                                           | Cloud-neutral storage key generation                  |
 | `shared/wikipedia/filters.py`                                           | Content filtering logic (is_content, get_hide_reason) |
+| `shared/wikipedia/ontology.py`                                          | Wikidata + DBpedia clients with caching               |
+| `shared/wikipedia/graph_analysis.py`                                    | NetworkX graph analysis, community detection          |
+| `agents/orchestrator.sh`                                                | Multi-agent orchestrator (Tier 1 prototype)           |
+| `agents/CONTEXT.md`                                                     | Agent architecture design rationale                   |
 | `providers/aws/app/lambda/wikipedia-downloader-lambda.py`               | AWS Lambda handler                                    |
 | `providers/aws/iac/cloudformation/wikipedia-stats-template-inline.yaml` | SAM template for AWS resources                        |
 | `notebooks/analysis.ipynb`                                              | Main interactive analysis notebook                    |
@@ -302,6 +342,7 @@ Python 3.12. Virtual environment at `.venv/`.
 - **Statistics**: statsmodels
 - **Cloud services**: boto3 (AWS)
 - **Notebooks**: jupyter
+- **Enrichment (optional)**: networkx, SPARQLWrapper, requests-cache, python-louvain, rich
 
 ## Analysis Capabilities
 
@@ -327,6 +368,15 @@ The project includes advanced statistical and signal processing analysis:
 - Time-series anomaly detection
 - Multi-scale pattern recognition
 
+**Enrichment Pipeline (optional):**
+
+- Wikidata entity resolution and metadata extraction
+- DBpedia SPARQL queries for categories and relationships
+- Semantic similarity between articles (Jaccard)
+- NetworkX graph construction with community detection (Louvain)
+- Centrality metrics (PageRank, betweenness, closeness)
+- GraphML export for external tools (Gephi)
+
 **Performance Optimization:**
 
 - SQLite database for fast queries on large datasets
@@ -349,7 +399,14 @@ The project includes advanced statistical and signal processing analysis:
    ./scripts/convert-to-sqlite.py
    ```
 
-3. **Generate Reports:**
+3. **Enrichment** (optional, requires enrichment dependencies):
+
+   ```bash
+   # Enrich top articles with Wikidata/DBpedia metadata
+   ./scripts/enrich-metadata.py --top 50
+   ```
+
+4. **Generate Reports:**
 
    ```bash
    # Standard report
@@ -360,9 +417,12 @@ The project includes advanced statistical and signal processing analysis:
 
    # Deep correlation analysis
    ./scripts/analyze-deep.py
+
+   # Deep analysis with graph/community detection
+   ./scripts/analyze-deep.py --use-enriched
    ```
 
-4. **Interactive Analysis:**
+5. **Interactive Analysis:**
    ```bash
    # Open Jupyter for custom analysis
    jupyter notebook notebooks/analysis.ipynb
@@ -376,6 +436,40 @@ The project includes advanced statistical and signal processing analysis:
 - **Report outputs**: All reports are self-contained HTML files with embedded visualizations
 - **Script output**: Analysis scripts save results to `reports/` directory with timestamped filenames
 - **Missing data**: Use `find-date-gaps.py` to identify gaps in your dataset before analysis
+
+## Agent Orchestration
+
+The `agents/` directory contains a multi-agent system prototype for answering quantitative, ontology-aware questions about Wikipedia article performance. This is primarily a **didactic** project for learning multi-agent patterns.
+
+**Architecture:** Orchestrator-Worker with parallel fan-out.
+
+```
+User Question
+     │
+  Planner Agent (decompose + normalize)
+     │
+     ├── Retrieval Agent (pageviews DB)
+     ├── Graph Agent (ontology/taxonomy)
+     │
+  Synthesis Agent (merge → markdown report)
+     │
+  Final Report
+```
+
+**Tiered development path:**
+
+| Tier | Orchestrator | Data Sources | Agents |
+|------|-------------|--------------|--------|
+| 1 (current) | `orchestrator.sh` | Mock JSON files | `claude -p` with inline data |
+| 2 | Bash script (same) | MCP servers wrapping real DB | `claude -p` + `--mcp-config` |
+| 3 | Python/TS with Agent SDK | MCP servers | SDK agents with typed tools |
+| 4 | Skills + A2A protocol | Distributed | Reusable packaged Skills |
+
+**Key design decisions:**
+- LLM planner for prototype; target deterministic planner for structured parts
+- Concurrency via `claude -p` background processes (`&` + `wait`)
+- Intermediate artifacts saved to temp dir for inspection
+- See `agents/CONTEXT.md` for full design rationale
 
 ## Development Guidelines
 
