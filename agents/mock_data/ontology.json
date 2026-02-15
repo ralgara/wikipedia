@@ -1,0 +1,15 @@
+{
+  "source": "mock_knowledge_graph",
+  "query_nodes": ["Greenland", "Sweden"],
+  "relationships": [
+    {"type": "both_are", "category": "geographic_entity", "specificity": "country_or_territory"},
+    {"type": "shared_region", "value": "Northern Europe / Arctic"},
+    {"type": "geopolitical_link", "value": "Nordic Council members"},
+    {"type": "colonial_history", "note": "Denmark governs Greenland; Sweden independent since 1523"},
+    {"type": "current_event_tags", "Greenland": ["US_acquisition_interest", "Arctic_sovereignty", "rare_earth_minerals", "climate_change_indicator"], "Sweden": ["NATO_accession_2024", "EU_member", "welfare_state"]}
+  ],
+  "taxonomy": {
+    "Greenland": ["Territory", "Arctic", "Denmark", "North America", "Self-governing"],
+    "Sweden": ["Country", "Scandinavia", "Europe", "Sovereign state", "EU member"]
+  }
+}
