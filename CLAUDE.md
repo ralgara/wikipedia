@@ -157,7 +157,7 @@ Wikimedia Pageviews API
 | `providers/aws/app/lambda/wikipedia-downloader-lambda.py`               | AWS Lambda handler                                    |
 | `providers/aws/iac/cloudformation/wikipedia-stats-template-inline.yaml` | SAM template for AWS resources                        |
 | `notebooks/analysis.ipynb`                                              | Main interactive analysis notebook                    |
-| `find-date-gaps.py`                                                     | Find missing dates in collected data                  |
+| `scripts/find-date-gaps.py`                                             | Find missing dates in collected data                  |
 
 ## Data Model
 

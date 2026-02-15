@@ -26,6 +26,6 @@ key = generate_storage_key(datetime(2025, 1, 15))
 
 ## Design Principles
 
-1. **No cloud SDK imports** - only standard library + urllib3
+1. **No cloud SDK imports** - only standard library (with requests as preferred but optional dependency)
 2. **Hive-style partitioning** - compatible with Athena, BigQuery, Spark
 3. **Simple functions** - no complex class hierarchies
