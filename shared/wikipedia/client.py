@@ -9,12 +9,11 @@ import logging
 from datetime import datetime, timedelta
 
 try:
-    import urllib3
-    _http = urllib3.PoolManager()
-    _USE_URLLIB3 = True
+    import requests
+    _HAS_REQUESTS = True
 except ImportError:
     import urllib.request
-    _USE_URLLIB3 = False
+    _HAS_REQUESTS = False
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +40,14 @@ def download_pageviews(date: datetime, project: str = "en.wikipedia", access: st
 
     logger.info(f"Fetching pageviews from {url}")
 
-    if _USE_URLLIB3:
-        response = _http.request("GET", url, headers=headers)
-        if response.status != 200:
-            raise Exception(f"API request failed with status {response.status}")
-        data = json.loads(response.data.decode("utf-8"))
+    if _HAS_REQUESTS:
+        response = requests.get(url, headers=headers, timeout=30)
+        if response.status_code != 200:
+            raise Exception(f"API request failed with status {response.status_code}: {response.text}")
+        data = response.json()
     else:
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req) as response:
+        with urllib.request.urlopen(req, timeout=30) as response:
             if response.status != 200:
                 raise Exception(f"API request failed with status {response.status}")
             data = json.loads(response.read().decode("utf-8"))

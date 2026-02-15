@@ -76,6 +76,30 @@ The spike analysis report includes:
 - **Cross-correlation** - Discover articles that spike together
 - **Wavelet analysis** - Multi-scale time-frequency patterns
 
+### Deep Correlation Analysis
+
+Advanced correlation detection with causal inference:
+
+```bash
+# Analyze last year (default)
+./scripts/analyze-deep.py
+
+# Analyze with enriched metadata (requires enrichment step)
+./scripts/analyze-deep.py --use-enriched
+```
+
+### Semantic Enrichment
+
+Enrich article metadata using Wikidata and DBpedia:
+
+```bash
+# Enrich top 1000 articles
+./scripts/enrich-metadata.py --top-n 1000
+
+# Resume enrichment
+./scripts/enrich-metadata.py --resume
+```
+
 ## Analysis Notebook
 
 For interactive exploration, run the Jupyter notebook:
@@ -105,6 +129,9 @@ wikipedia/
 │   ├── convert-to-sqlite.py      # Convert JSON to SQLite
 │   ├── generate-report.py        # Generate HTML reports
 │   ├── analyze-spikes.py         # Advanced spike analysis
+│   ├── analyze-deep.py           # Deep correlation analysis
+│   ├── enrich-metadata.py        # Wikidata/DBpedia enrichment
+│   ├── find-date-gaps.py         # Identify missing data
 │   └── review-flagged.py         # Review flagged articles
 ├── providers/                    # Cloud provider implementations
 │   ├── aws/                      # Amazon Web Services (implemented)
