@@ -16,3 +16,9 @@ reports/*.html
 **.DS_Store
 
 uv.lock
+
+# Eval framework generated data
+evals/fixtures/small_7d/
+evals/fixtures/medium_30d/
+evals/fixtures/large_90d/
+evals/results/
