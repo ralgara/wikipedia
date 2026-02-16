@@ -17,7 +17,14 @@ wikipedia/
 │   ├── mock_data/                # Mock data for agent development
 │   │   ├── pageviews.json        # Mock pageview database
 │   │   └── ontology.json         # Mock knowledge graph
-│   └── CONTEXT.md                # Agent architecture & design rationale
+│   ├── CONTEXT.md                # Agent architecture & design rationale
+│   └── evals/                    # Evaluation framework
+│       ├── run-evals.py          # CLI: run evals, compare runs
+│       ├── generate-cases.py     # Auto-generate cases from SQLite DB
+│       ├── cases/                # Eval case definitions (YAML)
+│       ├── judges/               # Deterministic + LLM-as-judge
+│       ├── lib/                  # Runner, scoring, schemas
+│       └── results/              # Run outputs (gitignored)
 ├── shared/                       # Shared cloud-neutral library
 │   └── wikipedia/                # Wikipedia API client & utilities
 │       ├── client.py             # Fetch from Wikimedia API
@@ -194,6 +201,8 @@ Wikimedia Pageviews API
 | `shared/wikipedia/graph_analysis.py`                                    | NetworkX graph analysis, community detection          |
 | `agents/orchestrator.sh`                                                | Multi-agent orchestrator (Tier 1 prototype)           |
 | `agents/CONTEXT.md`                                                     | Agent architecture design rationale                   |
+| `agents/evals/run-evals.py`                                             | Eval framework CLI entry point                        |
+| `agents/evals/generate-cases.py`                                        | Auto-generate eval cases from SQLite DB               |
 | `providers/aws/app/lambda/wikipedia-downloader-lambda.py`               | AWS Lambda handler                                    |
 | `providers/aws/iac/cloudformation/wikipedia-stats-template-inline.yaml` | SAM template for AWS resources                        |
 | `notebooks/analysis.ipynb`                                              | Main interactive analysis notebook                    |
@@ -470,6 +479,79 @@ User Question
 - Concurrency via `claude -p` background processes (`&` + `wait`)
 - Intermediate artifacts saved to temp dir for inspection
 - See `agents/CONTEXT.md` for full design rationale
+
+## Agent Evaluation Framework
+
+The `agents/evals/` directory provides a regression gate for evolving the multi-agent system. It enables swapping subtask agents to lighter/fine-tuned models while ensuring analytical quality is maintained.
+
+### Quick Start
+
+```bash
+# Generate 50+ eval cases from SQLite DB (one-time, or after DB changes)
+./agents/evals/generate-cases.py --db data/pageviews.db
+
+# Run deterministic-only eval (fast, free, no LLM calls)
+./agents/evals/run-evals.py --judge deterministic --case greenland_vs_sweden
+
+# Run full eval with LLM judge (uses claude -p)
+./agents/evals/run-evals.py --case greenland_vs_sweden
+
+# Run a batch by question type
+./agents/evals/run-evals.py --type comparison --limit 5
+
+# Test model swap (e.g. Haiku for retrieval agent)
+./agents/evals/run-evals.py --model retrieval:haiku --case greenland_vs_sweden
+
+# Compare two runs for regression detection
+./agents/evals/run-evals.py --compare results/run_A.json results/run_B.json
+
+# List all available cases
+./agents/evals/run-evals.py --list
+```
+
+### Architecture
+
+**Two judge types:**
+- **Deterministic** (`judges/deterministic.py`): JSON validity, required fields, numeric accuracy, keyword presence, table detection. Fast, free, stable baseline.
+- **LLM-as-judge** (`judges/llm_judge.py`): Uses `claude -p --model claude-opus-4-6` with per-agent rubrics. Always uses flagship model for consistent evaluation.
+
+**Five question types** (auto-generated from real pageviews DB):
+- `comparison` (~15): Article A vs Article B in year Y
+- `trend` (~10): How has article X changed since year Y?
+- `spike` (~10): What caused the traffic spike in article X?
+- `ranking` (~10): Top N articles in month M
+- `edge_case` (5): Ambiguous, missing data, future dates
+
+**Case format** (YAML): Each case defines question, inline mock data snapshot, ground-truth answers, and per-agent expected outputs with deterministic check targets + LLM judge guidance notes.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `agents/evals/run-evals.py` | CLI entry point |
+| `agents/evals/generate-cases.py` | Auto-generate cases from SQLite DB |
+| `agents/evals/cases/greenland_vs_sweden.yaml` | Canonical hand-crafted case |
+| `agents/evals/judges/deterministic.py` | Rule-based checks |
+| `agents/evals/judges/llm_judge.py` | LLM-as-judge via claude -p |
+| `agents/evals/judges/rubrics/*.txt` | Per-agent rubric templates |
+| `agents/evals/lib/runner.py` | Agent invocation (claude -p subprocess) |
+| `agents/evals/lib/scoring.py` | Score aggregation, terminal tables, comparison |
+| `agents/evals/lib/schemas.py` | EvalCase, AgentResult, JudgmentResult dataclasses |
+
+### Dependencies
+
+Optional: `pyyaml>=6.0` (install via `uv pip install pyyaml`). Defined in `pyproject.toml` under `[project.optional-dependencies] evals`.
+
+### Current Status
+
+Smoke tested on canonical case: planner 1.0, retrieval 1.0, graph 1.0, synthesis 0.67, overall 0.92 PASS.
+
+**Next steps:**
+- Run full LLM judge evaluation across broader case set
+- Test model swapping (e.g. Haiku/Sonnet for subtask agents)
+- Investigate synthesis score (likely missing specific values in report)
+- Add more hand-crafted cases for edge scenarios
+- Extension point for classical NLP / rule-based judges beyond current deterministic checks
 
 ## Development Guidelines
 
