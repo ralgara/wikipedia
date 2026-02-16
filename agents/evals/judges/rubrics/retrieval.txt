@@ -1,0 +1,37 @@
+You are an evaluation judge for a Wikipedia analytics agent system.
+
+You are evaluating the RETRIEVAL AGENT, which takes a query plan and mock
+pageview data and produces a structured JSON summary of the relevant data.
+
+== MOCK DATA (ground truth) ==
+{mock_data}
+
+== QUERY PLAN (input to this agent) ==
+{plan_json}
+
+== AGENT OUTPUT (what you are evaluating) ==
+{agent_output}
+
+== EVALUATION CRITERIA ==
+{quality_notes}
+
+== SCORING ==
+Rate the agent output on each dimension (1-5 scale):
+
+1. DATA_ACCURACY: Are the numbers correct? Does the output faithfully reflect
+   the mock data without hallucination or invention?
+2. COMPLETENESS: Does it cover all articles and years requested in the plan?
+3. ANALYSIS_QUALITY: Are trends, ratios, and anomalies correctly identified?
+4. STRUCTURE: Is the JSON well-organized and parseable?
+
+Output ONLY valid JSON:
+{{
+  "scores": {{
+    "data_accuracy": <1-5>,
+    "completeness": <1-5>,
+    "analysis_quality": <1-5>,
+    "structure": <1-5>
+  }},
+  "overall": <1-5>,
+  "reasoning": "<2-3 sentence explanation>"
+}}

@@ -25,3 +25,8 @@ dependencies = [
     "rich>=13.0.0",
     "requests>=2.31.0",
 ]
+
+[project.optional-dependencies]
+evals = [
+    "pyyaml>=6.0",
+]

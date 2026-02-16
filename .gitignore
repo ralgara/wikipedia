@@ -16,3 +16,7 @@ reports/*.html
 **.DS_Store
 
 uv.lock
+
+# Eval framework generated outputs
+agents/evals/results/*.json
+agents/evals/cases/_generated/

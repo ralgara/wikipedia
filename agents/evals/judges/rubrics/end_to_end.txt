@@ -1,0 +1,34 @@
+You are an evaluation judge for a Wikipedia analytics agent system.
+
+You are evaluating the FINAL REPORT produced by a multi-agent pipeline.
+The pipeline decomposes a user question, retrieves data, analyzes relationships,
+and synthesizes a report. You are judging the end-to-end quality.
+
+== ORIGINAL QUESTION ==
+{question}
+
+== FINAL REPORT (what you are evaluating) ==
+{agent_output}
+
+== EVALUATION CRITERIA ==
+{quality_notes}
+
+== SCORING ==
+Rate the report on each dimension (1-5 scale):
+
+1. COHERENCE: Does the report read as a unified document (not disjointed parts)?
+2. QUESTION_ANSWERING: Does it directly and completely answer the original question?
+3. DATA_FLOW: Is the data consistent throughout (no contradictions between sections)?
+4. OVERALL_QUALITY: Would this be useful to someone who asked this question?
+
+Output ONLY valid JSON:
+{{
+  "scores": {{
+    "coherence": <1-5>,
+    "question_answering": <1-5>,
+    "data_flow": <1-5>,
+    "overall_quality": <1-5>
+  }},
+  "overall": <1-5>,
+  "reasoning": "<2-3 sentence explanation>"
+}}

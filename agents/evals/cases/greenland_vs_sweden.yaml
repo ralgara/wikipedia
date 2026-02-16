@@ -1,0 +1,136 @@
+# Canonical eval case: Greenland vs Sweden
+# Hand-crafted from the original mock data in agents/mock_data/
+# This is the reference case from the Tier 1 orchestrator prototype.
+
+id: greenland_vs_sweden
+type: comparison
+description: >
+  Core comparison using the original mock data. Tests all four agents
+  with known-good reference data including ontology relationships.
+
+question: >
+  How much more hits did Greenland vs Sweden get in wikipedia last year
+  and how has that relationship changed since 2015?
+  What factors could be driving this trend?
+
+mock_data_inline:
+  pageviews:
+    Greenland:
+      "2015": 11357
+      "2016": 12526
+      "2017": 20987
+      "2018": 13272
+      "2019": 44587
+      "2020": 13450
+      "2021": 14016
+      "2022": 13539
+      "2023": 10925
+      "2024": 25650
+      "2025": 42954
+      "2026": 123170
+    Sweden:
+      "2015": 10499
+      "2016": 10137
+      "2017": 10369
+      "2018": 11544
+      "2019": 10170
+      "2020": 13819
+      "2021": 11006
+      "2022": 11435
+      "2023": 12310
+      "2024": 12573
+      "2025": 10914
+      "2026": null
+  ontology:
+    relationships:
+      - type: both_are
+        category: geographic_entity
+      - type: shared_region
+        value: Northern Europe / Arctic
+      - type: geopolitical_link
+        value: Nordic Council members
+      - type: colonial_history
+        note: Denmark governs Greenland
+    event_tags:
+      Greenland:
+        - US_acquisition_interest
+        - Arctic_sovereignty
+        - rare_earth_minerals
+        - climate_change_indicator
+      Sweden:
+        - NATO_accession_2024
+        - EU_member
+
+ground_truth:
+  total_views:
+    Greenland_2025: 42954
+    Sweden_2025: 10914
+  ratio_2025: 3.94
+  higher_article: Greenland
+  trend_direction:
+    Greenland: increasing
+    Sweden: stable
+  crossover_year: "2019"  # Greenland first clearly exceeded Sweden
+
+expected:
+  planner:
+    required_articles:
+      - Greenland
+      - Sweden
+    time_range_includes:
+      - "2015"
+      - "2025"
+    min_tasks: 2
+    valid_json: true
+    quality_notes: >
+      Plan should identify both articles, set a time range from ~2015 to present,
+      and create at least a retrieval task and a graph/ontology task.
+      Should recognize the question has both quantitative and explanatory parts.
+
+  retrieval:
+    valid_json: true
+    must_identify_higher: Greenland
+    must_contain_values:
+      - 42954
+      - 10914
+    ratio_tolerance: 0.3
+    quality_notes: >
+      Should accurately extract yearly data for both articles.
+      Must compute ratios showing Greenland overtaking Sweden in 2019.
+      Should identify the 2026 spike in Greenland (123170).
+      Should note Sweden 2026 is null/unavailable.
+
+  graph:
+    valid_json: true
+    must_mention:
+      - Arctic
+      - Denmark
+      - Nordic
+    must_reference_events: true
+    quality_notes: >
+      Should identify geographic/political relationship.
+      Must mention US acquisition interest as a driver for Greenland spikes.
+      Should note NATO accession for Sweden.
+      Should reference the colonial history link.
+
+  synthesis:
+    must_contain_table: true
+    must_name_articles:
+      - Greenland
+      - Sweden
+    must_contain_values:
+      - "42954"
+      - "10914"
+    min_word_count: 200
+    quality_notes: >
+      Report should have: (1) a year-by-year comparison table with actual numbers,
+      (2) narrative explaining the Greenland surge driven by US interest,
+      (3) factors section drawing on ontology data,
+      (4) speculation about future trends. Numbers must match mock data.
+
+  end_to_end:
+    quality_notes: >
+      The final report should coherently answer the original question.
+      Data should flow correctly from plan through retrieval to synthesis.
+      The ontology context should enrich (not contradict) the data narrative.
+      The report should be readable as a standalone document.

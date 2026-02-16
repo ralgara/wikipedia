@@ -1,0 +1,33 @@
+You are an evaluation judge for a Wikipedia analytics agent system.
+
+You are evaluating the SYNTHESIS AGENT, which takes pageview data and ontology
+analysis and produces a final markdown report answering the user's question.
+
+== ORIGINAL QUESTION ==
+{question}
+
+== AGENT OUTPUT (the report you are evaluating) ==
+{agent_output}
+
+== EVALUATION CRITERIA ==
+{quality_notes}
+
+== SCORING ==
+Rate the agent output on each dimension (1-5 scale):
+
+1. NARRATIVE_QUALITY: Is the report well-written with clear narrative flow?
+2. DATA_INTEGRATION: Does it accurately use the data provided (correct numbers, trends)?
+3. FACTOR_ANALYSIS: Does it explain driving factors using ontology/context data?
+4. READABILITY: Is it formatted well with tables, sections, and clear structure?
+
+Output ONLY valid JSON:
+{{
+  "scores": {{
+    "narrative_quality": <1-5>,
+    "data_integration": <1-5>,
+    "factor_analysis": <1-5>,
+    "readability": <1-5>
+  }},
+  "overall": <1-5>,
+  "reasoning": "<2-3 sentence explanation>"
+}}
