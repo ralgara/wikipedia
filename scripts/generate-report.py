@@ -18,6 +18,7 @@ from datetime import datetime
 from glob import glob
 from pathlib import Path
 
+import html as html_module
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -261,7 +262,6 @@ def compute_day_of_week_stats(df: pd.DataFrame) -> dict:
 
 
 def generate_narrative(stats: dict, spike_df: pd.DataFrame,
-                       top_articles: pd.DataFrame, consistency: pd.DataFrame,
                        dow_stats: dict) -> dict:
     """Generate data-driven narrative HTML paragraphs with causal explanations.
 
@@ -272,10 +272,15 @@ def generate_narrative(stats: dict, spike_df: pd.DataFrame,
     """
     narrative = {}
 
-    # Section A — Overview insight with peak day context
+    # Extract top spike once if available
+    top_spike = None
+    article_name = None
     if spike_df is not None and not spike_df.empty:
         top_spike = spike_df.iloc[0]
-        article_name = top_spike['article'].replace('_', ' ')
+        article_name = html_module.escape(top_spike['article'].replace('_', ' '))
+
+    # Section A — Overview insight with peak day context
+    if top_spike is not None:
         narrative['overview_insight'] = (
             f'<p style="color: {COLORS["muted"]}; margin-bottom: 1rem;">'
             f'Peak traffic of {stats["peak_views"]:,} views occurred on {stats["peak_day"]}, '
@@ -312,9 +317,7 @@ def generate_narrative(stats: dict, spike_df: pd.DataFrame,
             )
 
     # Section C — Spike context with causal explanation
-    if spike_df is not None and not spike_df.empty:
-        top_spike = spike_df.iloc[0]
-        article_name = top_spike['article'].replace('_', ' ')
+    if top_spike is not None:
         spike_date_str = (top_spike['spike_date'].strftime('%Y-%m-%d')
                           if hasattr(top_spike['spike_date'], 'strftime')
                           else str(top_spike['spike_date']))
@@ -669,7 +672,7 @@ def main():
         dow_stats = compute_day_of_week_stats(filtered_df)
     except (ValueError, ZeroDivisionError):
         dow_stats = {}
-    narrative = generate_narrative(stats, spike_df, top_articles, consistency, dow_stats)
+    narrative = generate_narrative(stats, spike_df, dow_stats)
 
     # Generate HTML
     print("Generating report...")

@@ -113,7 +113,7 @@ def generate_report(data_dir: Path) -> str:
         dow_stats = mod.compute_day_of_week_stats(filtered_df)
     except (ValueError, ZeroDivisionError, AttributeError):
         dow_stats = {}
-    narrative = mod.generate_narrative(stats, spike_df, top_articles, consistency, dow_stats)
+    narrative = mod.generate_narrative(stats, spike_df, dow_stats)
 
     html = mod.generate_html(stats, plots, top_articles, spike_df, consistency, narrative)
     return html
