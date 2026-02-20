@@ -357,30 +357,28 @@ Fixtures include planted spikes (Super Bowl, Solar eclipse, Academy Awards), con
 
 | Dimension     | Score | Notes                                    |
 | ------------- | ----- | ---------------------------------------- |
-| Accuracy      | 0.856 | Partial on article count verification    |
+| Accuracy      | 0.900 | Partial on article count verification    |
 | Completeness  | 1.000 | All sections present                     |
-| Synthesis     | 0.760 | **Weakest** - zero causal explanations   |
-| Filtering     | 1.000 | All non-content correctly excluded       |
+| Synthesis     | 1.000 | Data-driven narrative with causal language |
+| Filtering     | 0.800 | Non-content pages filtered               |
 | Visualization | 1.000 | Charts render, alt text, responsive      |
-| **Overall**   | **0.904** |                                      |
+| **Overall**   | **0.945** |                                      |
 
 ### Synthesis Score Analysis
 
-The synthesis dimension (0.76) is the weakest scoring area. Criteria breakdown:
+The synthesis dimension scores 1.00 after adding data-driven narrative paragraphs. Criteria breakdown:
 
-- `narrative_present`: 0.80 - Some explanatory paragraphs exist
+- `narrative_present`: 1.00 - 5+ explanatory paragraphs with causal language
 - `contextual_language`: 1.00 - Uses pattern/trend/spike terminology
 - `cross_references`: 1.00 - Weekend traffic patterns referenced
-- `causal_explanations`: **0.00** - No "because", "due to", "driven by" language
+- `causal_explanations`: 1.00 - Uses "driven by", "this suggests", "likely", "because", "due to"
 - `summary_present`: 1.00 - Overview section exists
 
-**Root cause**: `generate-report.py` uses static template text. Reports present data without explaining *why* trends exist. No causal reasoning or cross-dimensional synthesis.
+The `generate_narrative()` function in `generate-report.py` produces data-driven paragraphs covering peak traffic context, day-of-week patterns, and spike explanations. All text is deterministic (no LLM calls) and derived from already-computed data.
 
-**Improvement paths**:
-- Add data-driven narrative paragraphs to report template
-- Include a "Key Findings" summary section
-- Cross-reference spike data with consistency and day-of-week patterns
+**Future improvement paths**:
 - Consider optional LLM-generated narrative summaries (`--enrich` flag)
+- Add more cross-dimensional synthesis between spike and consistency data
 
 ### Model Swapping
 

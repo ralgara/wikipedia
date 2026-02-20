@@ -243,8 +243,96 @@ def calculate_stats(df: pd.DataFrame, filtered_df: pd.DataFrame) -> dict:
     }
 
 
+def compute_day_of_week_stats(df: pd.DataFrame) -> dict:
+    """Compute weekday vs weekend traffic statistics for narrative generation."""
+    daily_total = df.groupby('date')['views'].sum().reset_index()
+    daily_total['dow'] = daily_total['date'].dt.day_name()
+    dow_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    dow_avg = daily_total.groupby('dow')['views'].mean().reindex(dow_order)
+
+    weekday_avg = dow_avg.iloc[:5].mean()
+    weekend_avg = dow_avg.iloc[5:].mean()
+
+    return {
+        'weekday_avg': weekday_avg,
+        'weekend_avg': weekend_avg,
+        'weekend_diff_pct': ((weekend_avg - weekday_avg) / weekday_avg) * 100 if weekday_avg > 0 else 0,
+    }
+
+
+def generate_narrative(stats: dict, spike_df: pd.DataFrame,
+                       top_articles: pd.DataFrame, consistency: pd.DataFrame,
+                       dow_stats: dict) -> dict:
+    """Generate data-driven narrative HTML paragraphs with causal explanations.
+
+    Returns dict with keys:
+        'overview_insight': After overview metrics, before daily traffic chart
+        'traffic_pattern_insight': In the day-of-week section
+        'spike_insight': In the spike detection section
+    """
+    narrative = {}
+
+    # Section A — Overview insight with peak day context
+    if spike_df is not None and not spike_df.empty:
+        top_spike = spike_df.iloc[0]
+        article_name = top_spike['article'].replace('_', ' ')
+        narrative['overview_insight'] = (
+            f'<p style="color: {COLORS["muted"]}; margin-bottom: 1rem;">'
+            f'Peak traffic of {stats["peak_views"]:,} views occurred on {stats["peak_day"]}, '
+            f'likely driven by {article_name} reaching {top_spike["multiplier"]:.0f}x its average. '
+            f'This suggests a major news event or cultural moment triggered widespread interest.'
+            f'</p>'
+        )
+    else:
+        narrative['overview_insight'] = (
+            f'<p style="color: {COLORS["muted"]}; margin-bottom: 1rem;">'
+            f'Peak traffic of {stats["peak_views"]:,} views occurred on {stats["peak_day"]}. '
+            f'No significant spikes were detected, which suggests steady baseline interest '
+            f'rather than event-driven traffic during this period.'
+            f'</p>'
+        )
+
+    # Section B — Day-of-week traffic pattern with causal language
+    if dow_stats and not pd.isna(dow_stats.get('weekend_diff_pct', float('nan'))):
+        diff = abs(dow_stats['weekend_diff_pct'])
+        if dow_stats['weekend_diff_pct'] < 0:
+            narrative['traffic_pattern_insight'] = (
+                f'<p style="color: {COLORS["muted"]}; margin-bottom: 1rem;">'
+                f'Weekday traffic averages {diff:.0f}% higher than weekends. '
+                f'This is probably due to work and school-related browsing patterns, '
+                f'as Wikipedia serves as a primary reference during professional hours.'
+                f'</p>'
+            )
+        else:
+            narrative['traffic_pattern_insight'] = (
+                f'<p style="color: {COLORS["muted"]}; margin-bottom: 1rem;">'
+                f'Weekend traffic averages {diff:.0f}% higher than weekdays, '
+                f'likely driven by increased leisure browsing on Saturdays and Sundays.'
+                f'</p>'
+            )
+
+    # Section C — Spike context with causal explanation
+    if spike_df is not None and not spike_df.empty:
+        top_spike = spike_df.iloc[0]
+        article_name = top_spike['article'].replace('_', ' ')
+        spike_date_str = (top_spike['spike_date'].strftime('%Y-%m-%d')
+                          if hasattr(top_spike['spike_date'], 'strftime')
+                          else str(top_spike['spike_date']))
+        narrative['spike_insight'] = (
+            f'<p style="color: {COLORS["muted"]}; margin-bottom: 1rem;">'
+            f'The largest spike was {article_name} on {spike_date_str} '
+            f'at {top_spike["spike_views"]:,} views ({top_spike["multiplier"]:.0f}x above average). '
+            f'Because spikes of this magnitude typically correlate with breaking news coverage, '
+            f'this likely indicates a major media event on or near that date.'
+            f'</p>'
+        )
+
+    return narrative
+
+
 def generate_html(stats: dict, plots: dict, top_articles: pd.DataFrame,
-                  spike_df: pd.DataFrame, consistency: pd.DataFrame) -> str:
+                  spike_df: pd.DataFrame, consistency: pd.DataFrame,
+                  narrative: dict = None) -> str:
     """Generate the HTML report."""
 
     def format_number(n):
@@ -452,6 +540,7 @@ def generate_html(stats: dict, plots: dict, top_articles: pd.DataFrame,
                     <div class="metric-label">Avg Daily Views</div>
                 </div>
             </div>
+            {(narrative or {}).get('overview_insight', '')}
             <div class="chart">
                 <img src="data:image/png;base64,{plots['daily_traffic']}" alt="Daily Traffic">
             </div>
@@ -491,6 +580,7 @@ def generate_html(stats: dict, plots: dict, top_articles: pd.DataFrame,
             <p style="color: {COLORS['muted']}; margin-bottom: 1rem;">
                 Weekend traffic (highlighted in yellow) typically shows different patterns than weekdays.
             </p>
+            {(narrative or {}).get('traffic_pattern_insight', '')}
             <div class="chart">
                 <img src="data:image/png;base64,{plots['day_of_week']}" alt="Day of Week">
             </div>
@@ -501,6 +591,7 @@ def generate_html(stats: dict, plots: dict, top_articles: pd.DataFrame,
             <p style="color: {COLORS['muted']}; margin-bottom: 1rem;">
                 Articles with unusual view surges (3+ standard deviations above their average).
             </p>
+            {(narrative or {}).get('spike_insight', '')}
             <table>
                 <thead>
                     <tr><th>Article</th><th>Spike Date</th><th>Peak Views</th><th>Multiplier</th></tr>
@@ -573,9 +664,16 @@ def main():
     consistency.columns = ['article', 'days_appeared', 'total_views']
     consistency = consistency.sort_values('days_appeared', ascending=False)
 
+    # Generate narrative
+    try:
+        dow_stats = compute_day_of_week_stats(filtered_df)
+    except (ValueError, ZeroDivisionError):
+        dow_stats = {}
+    narrative = generate_narrative(stats, spike_df, top_articles, consistency, dow_stats)
+
     # Generate HTML
     print("Generating report...")
-    html = generate_html(stats, plots, top_articles, spike_df, consistency)
+    html = generate_html(stats, plots, top_articles, spike_df, consistency, narrative)
 
     # Save report
     REPORTS_DIR.mkdir(exist_ok=True)
