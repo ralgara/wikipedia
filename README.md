@@ -95,6 +95,8 @@ The notebook includes:
 
 Assess analytics pipeline output quality across five dimensions using heuristic (structural) or LLM-based (Claude) judging.
 
+**Requires the virtual environment** (`source .venv/bin/activate`):
+
 ```bash
 source .venv/bin/activate
 
