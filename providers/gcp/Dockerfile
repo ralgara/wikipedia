@@ -1,18 +1,17 @@
 # Dockerfile — Wikipedia pipeline (GCP Cloud Run Job)
 # Build context: repo root
-#   docker build -f providers/gcp/Dockerfile -t wikipedia-pipeline .
+#   docker build --platform linux/amd64 -f providers/gcp/Dockerfile -t wikipedia-pipeline .
 
-FROM python:3.12-slim
+FROM python:3.12-alpine
 
 WORKDIR /app
 
-# System deps:
-#   libgomp1       — OpenMP, required by numpy/scipy parallel ops
-#   fonts-dejavu-core — fonts for matplotlib chart text rendering
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgomp1 \
-    fonts-dejavu-core \
-    && rm -rf /var/lib/apt/lists/*
+# Runtime deps:
+#   libgomp    — OpenMP, required by numpy/scipy parallel ops
+#   font-dejavu — fonts for matplotlib chart text rendering
+RUN apk add --no-cache \
+    libgomp \
+    font-dejavu
 
 # Install Python deps (separate layer for cache efficiency)
 COPY providers/gcp/requirements.txt .
