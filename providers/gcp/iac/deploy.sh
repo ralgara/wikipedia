@@ -20,6 +20,7 @@ SA="wikipedia-pipeline@${PROJECT_ID}.iam.gserviceaccount.com"
 
 echo "==> Building container image"
 docker build \
+  --platform linux/amd64 \
   -f providers/gcp/Dockerfile \
   -t "${IMAGE}:latest" \
   .
