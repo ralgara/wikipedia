@@ -124,8 +124,8 @@ def upload_report(gcs: storage.Client, report: Path) -> str:
     key = f"reports/{report.name}"
     blob = gcs.bucket(BUCKET_NAME).blob(key)
     blob.upload_from_filename(str(report), content_type="text/html")
-    blob.make_public()
-    url = blob.public_url
+    # Bucket has allUsers:objectViewer via IAM — per-object ACLs disabled
+    url = f"https://storage.googleapis.com/{blob.bucket.name}/{blob.name}"
     logger.info(f"Report live: {url}")
     return url
 
