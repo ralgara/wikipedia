@@ -98,7 +98,7 @@ def generate_report() -> Path:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
     result = subprocess.run(
-        [sys.executable, "scripts/generate-report.py", "--days", str(REPORT_DAYS)],
+        [sys.executable, "scripts/generate-report.py", "--days", str(REPORT_DAYS), "--output", "latest.html"],
         cwd="/app",
         capture_output=True,
         text=True,
@@ -120,7 +120,7 @@ def generate_report() -> Path:
 # ── Step 5: Upload report to GCS ─────────────────────────────────────────────
 
 def upload_report(gcs: storage.Client, report: Path) -> str:
-    """Upload HTML report to GCS, make public, return public URL."""
+    """Upload HTML report to GCS and return public URL."""
     key = f"reports/{report.name}"
     blob = gcs.bucket(BUCKET_NAME).blob(key)
     blob.upload_from_filename(str(report), content_type="text/html")
@@ -131,12 +131,23 @@ def upload_report(gcs: storage.Client, report: Path) -> str:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def download_latest(gcs: storage.Client) -> None:
+    """Try to download the most recent available pageviews (API has variable lag)."""
+    for days_ago in range(2, 6):
+        target = datetime.utcnow() - timedelta(days=days_ago)
+        try:
+            download_and_store(gcs, target)
+            return
+        except Exception as e:
+            logger.warning(f"  {target.strftime('%Y-%m-%d')} not available: {e}")
+    logger.warning("No recent pageviews available — skipping download, continuing with existing data")
+
+
 def main():
     gcs = storage.Client(project=GCP_PROJECT)
-    yesterday = datetime.utcnow() - timedelta(days=1)
 
     logger.info("==> [1/5] Download pageviews")
-    download_and_store(gcs, yesterday)
+    download_latest(gcs)
 
     logger.info(f"==> [2/5] Sync last {REPORT_DAYS} days from GCS")
     sync_recent(gcs, REPORT_DAYS)
