@@ -46,13 +46,16 @@ CACHE_DIR = DATA_DIR / 'longitudinal'
 REPORTS_DIR = ROOT / 'reports'
 CACHE_FILE = CACHE_DIR / 'stats.json'
 
-# Strata boundaries (days present out of total archive days)
+# Strata boundaries (days present out of total archive days).
+# Note: 'Ephemeral' is <1% of the archive — roughly 39 days at 3,900 days total. It is a
+# stratum, not the one-shot count; articles appearing exactly once are counted separately
+# as `n_oneshot`.
 STRATA = [
     ('Permanent',   0.90, 1.01,  '#4ecca3'),  # ≥90% of days
     ('Perennial',   0.25, 0.90,  '#00adb5'),  # 25–90%
     ('Occasional',  0.05, 0.25,  '#ffc93c'),  # 5–25%
     ('Rare',        0.01, 0.05,  '#e94560'),  # 1–5%
-    ('One-shot',    0.00, 0.01,  '#a0a0a0'),  # <1% (includes exactly-once)
+    ('Ephemeral',   0.00, 0.01,  '#a0a0a0'),  # <1%
 ]
 
 
@@ -90,7 +93,7 @@ def compute_stats(df: pd.DataFrame) -> dict:
         for name, lo, hi, _ in STRATA:
             if lo <= rate < hi:
                 return name
-        return 'One-shot'
+        return 'Ephemeral'
     presence['stratum'] = presence['appearance_rate'].apply(assign_stratum)
 
     strata_counts = presence.groupby('stratum')['article'].count().to_dict()
@@ -166,21 +169,27 @@ def compute_seasonal(df: pd.DataFrame, articles: list[str]) -> list[dict]:
     """Compute lag-365 autocorrelation for a list of articles.
 
     Returns top 20 highest-autocorrelation articles (most seasonal).
+
+    Caveat: days on which an article is absent from the top-1000 are filled with 0 views,
+    not with its true (unobserved, sub-threshold) traffic. For an article present on only a
+    fraction of archive days the series is mostly zeros, so the lag-365 signal reflects the
+    periodicity of *presence in the top-1000* as much as the periodicity of raw traffic.
+    That is still a seasonality signal, but it is a censored one.
     """
     if not articles:
         return []
 
     # Build a date index spanning the full archive
     all_dates = pd.date_range(df['date'].min(), df['date'].max(), freq='D')
-    subset = df[df['article'].isin(articles)].copy()
+    subset = df[df['article'].isin(set(articles))]
 
     results = []
-    total = len(articles)
-    for i, article in enumerate(articles):
+    grouped = subset.groupby('article', sort=False)
+    total = grouped.ngroups
+    for i, (article, art_df) in enumerate(grouped):
         if i % 100 == 0:
             print(f"  Seasonal: {i}/{total}", end='\r')
-        art_df = subset[subset['article'] == article].set_index('date')['views']
-        art_series = art_df.reindex(all_dates, fill_value=0)
+        art_series = art_df.set_index('date')['views'].reindex(all_dates, fill_value=0)
 
         if len(art_series) < 730:  # need at least 2 years
             continue
@@ -419,6 +428,11 @@ def build_html(stats: dict, plots: dict) -> str:
           <p class="narrative">Articles with strong annual periodicity in their traffic —
           detected without any taxonomy, purely from the time series. High autocorrelation
           at lag-365 indicates the article spikes at roughly the same calendar period each year.</p>
+          <p class="narrative" style="color:{COLORS['muted']};font-size:.8rem">
+          Caveat: days on which an article falls out of the top-1000 are recorded as 0 views
+          rather than its true sub-threshold traffic. The series is therefore censored, and
+          this measure captures the periodicity of <em>presence in the top-1000</em> as much
+          as the periodicity of raw pageviews.</p>
           {_table(['Article', 'Lag-365 Autocorrelation'], seas_rows)}
         </section>
         '''
