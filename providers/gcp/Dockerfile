@@ -1,16 +1,33 @@
-FROM --platform=linux/amd64 python:3.12-alpine
+# Dockerfile — Wikipedia pipeline (GCP Cloud Run Job)
+# Build context: repo root
+#   docker build --platform linux/amd64 -f providers/gcp/Dockerfile -t wikipedia-pipeline .
 
-RUN apk add --no-cache gcc musl-dev linux-headers g++ gfortran openblas-dev
+# amd64 is pinned in the FROM line, not left to a --platform build flag: the image is built
+# on an arm64 Mac as often as on the x86 PC, and an arm64 image silently fails on the target.
+FROM --platform=linux/amd64 python:3.12-alpine
 
 WORKDIR /app
 
-COPY providers/gcp/requirements.txt requirements.txt
+# Runtime deps:
+#   libgomp    — OpenMP, required by numpy/scipy parallel ops
+#   font-dejavu — fonts for matplotlib chart text rendering
+RUN apk add --no-cache \
+    libgomp \
+    font-dejavu
+
+# Install Python deps (separate layer for cache efficiency)
+COPY providers/gcp/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy shared library and scripts
 COPY shared/ shared/
-COPY scripts/generate-report.py scripts/generate-report.py
-COPY providers/gcp/app/pipeline.py pipeline.py
+COPY scripts/ scripts/
 
-ENV PYTHONPATH=/app
+# Copy GCP app code
+COPY providers/gcp/app/ providers/gcp/app/
 
-CMD ["python", "pipeline.py"]
+# Force non-interactive matplotlib backend
+ENV MPLBACKEND=Agg
+
+# Cloud Run Job: run to completion and exit
+ENTRYPOINT ["python", "providers/gcp/app/pipeline.py"]

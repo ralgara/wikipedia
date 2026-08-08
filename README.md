@@ -91,6 +91,68 @@ The notebook includes:
 - Day-of-week patterns
 - Consistency analysis (persistent articles vs one-hit wonders)
 
+## Evaluation Framework
+
+Assess analytics pipeline output quality across five dimensions using heuristic (structural) or LLM-based (Claude) judging.
+
+```bash
+source .venv/bin/activate
+
+# Run heuristic eval (no API key needed)
+python -m evals.run_eval --judge heuristic
+
+# Run on all fixture sizes (7d, 30d, 90d)
+python -m evals.run_eval --judge heuristic --batch all
+
+# Investigate a specific dimension
+python -m evals.run_eval --judge heuristic --dimension synthesis
+
+# Run LLM judge eval (requires ANTHROPIC_API_KEY)
+python -m evals.run_eval --judge llm --model haiku
+
+# Compare two judge models (model swapping)
+python -m evals.run_eval --judge llm --model haiku --compare sonnet
+
+# Save results to evals/results/
+python -m evals.run_eval --judge heuristic --batch all --save
+
+# Run framework tests
+python -m evals.test_eval
+```
+
+### Scoring Dimensions
+
+| Dimension | Weight | Description |
+|-----------|--------|-------------|
+| Accuracy | 0.25 | Statistical correctness of computed metrics |
+| Completeness | 0.20 | Coverage of all expected report sections |
+| Synthesis | 0.25 | How well the report connects data into insights |
+| Filtering | 0.15 | Proper exclusion of non-content pages |
+| Visualization | 0.15 | Quality and appropriateness of charts |
+
+### Current Baseline (Heuristic)
+
+| Dimension | Score |
+|-----------|-------|
+| Accuracy | 0.856 |
+| Completeness | 1.000 |
+| Synthesis | 0.760 |
+| Filtering | 1.000 |
+| Visualization | 1.000 |
+| **Overall** | **0.904** |
+
+Synthesis is the weakest dimension (0.76) due to zero causal explanations in report templates. Reports present data without explaining *why* trends exist.
+
+### Test Fixtures
+
+Generated with known properties for validation:
+
+- **small_7d** - 7 days, quick validation
+- **medium_30d** - 30 days, standard evaluation (default)
+- **large_90d** - 90 days, stress testing
+
+Fixtures include planted spikes (Super Bowl, Solar eclipse, Academy Awards), consistent articles, non-content pages, and flagged articles.
+
 ## Project Structure
 
 ```
@@ -106,6 +168,14 @@ wikipedia/
 │   ├── generate-report.py        # Generate HTML reports
 │   ├── analyze-spikes.py         # Advanced spike analysis
 │   └── review-flagged.py         # Review flagged articles
+├── evals/                        # Evaluation framework
+│   ├── framework.py              # Dimensions, rubrics, scoring
+│   ├── heuristic.py              # Heuristic scorer (no LLM needed)
+│   ├── judge.py                  # LLM judge with model swapping
+│   ├── run_eval.py               # CLI eval runner
+│   ├── test_eval.py              # Framework tests
+│   └── fixtures/                 # Test fixtures (gitignored)
+│       └── generate_fixtures.py  # Fixture data generator
 ├── providers/                    # Cloud provider implementations
 │   ├── aws/                      # Amazon Web Services (implemented)
 │   │   ├── iac/                  # Infrastructure as Code
@@ -247,4 +317,5 @@ ORDER BY total DESC LIMIT 20;
 
 - Python 3.12+
 - Virtual environment: `python3 -m venv .venv && source .venv/bin/activate`
+- For LLM judge eval: `pip install anthropic` and `ANTHROPIC_API_KEY` env var
 - For cloud deployment: AWS SAM CLI, AWS credentials

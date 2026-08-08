@@ -117,14 +117,13 @@ def test_heuristic_scoring():
         assert 0.0 <= ds.score <= 1.0, f"{ds.dimension}: score {ds.score} out of range"
         assert len(ds.details) > 0, f"{ds.dimension}: no details"
 
-    # Synthesis should be the weakest dimension
+    # Check synthesis dimension has improved with narrative
     synth = next(ds for ds in result.dimension_scores if ds.dimension == Dimension.SYNTHESIS)
-    other_scores = [ds.score for ds in result.dimension_scores if ds.dimension != Dimension.SYNTHESIS]
-    assert synth.score <= max(other_scores), "Synthesis should be <= other dimensions"
 
     # Check specific synthesis criteria
     assert "causal_explanations" in synth.criteria_scores
-    assert synth.criteria_scores["causal_explanations"] == 0.0, "Report has no causal language"
+    assert synth.criteria_scores["causal_explanations"] >= 0.5, \
+        f"Report should have causal language, got {synth.criteria_scores['causal_explanations']}"
 
     print(f"  PASSED (overall={result.overall_score:.3f}, synthesis={synth.score:.3f})")
 

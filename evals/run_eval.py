@@ -109,7 +109,13 @@ def generate_report(data_dir: Path) -> str:
     consistency.columns = ["article", "days_appeared", "total_views"]
     consistency = consistency.sort_values("days_appeared", ascending=False)
 
-    html = mod.generate_html(stats, plots, top_articles, spike_df, consistency)
+    try:
+        dow_stats = mod.compute_day_of_week_stats(filtered_df)
+    except (ValueError, ZeroDivisionError, AttributeError):
+        dow_stats = {}
+    narrative = mod.generate_narrative(stats, spike_df, dow_stats)
+
+    html = mod.generate_html(stats, plots, top_articles, spike_df, consistency, narrative)
     return html
 
 
@@ -238,20 +244,13 @@ def investigate_synthesis(batch: BatchResult):
     # Diagnosis
     print(f"\n  {'─' * 50}")
     print(f"  DIAGNOSIS:")
-    print(f"  The generate-report.py script produces a data-presentation")
-    print(f"  report with tables and charts but limited narrative synthesis.")
-    print(f"  Key gaps:")
-    print(f"    1. No causal explanations (why spikes happen)")
-    print(f"    2. Limited cross-referencing between sections")
-    print(f"    3. No summary/conclusion tying findings together")
-    print(f"    4. Template text is generic, not data-driven")
-    print(f"")
-    print(f"  RECOMMENDATIONS to improve synthesis score:")
-    print(f"    - Add a 'Key Findings' summary section to report")
-    print(f"    - Include narrative paragraphs explaining spike context")
-    print(f"    - Cross-reference consistency data with spike data")
-    print(f"    - Add weekend/weekday pattern interpretation")
-    print(f"    - Consider LLM-generated narrative summaries")
+    print(f"  The generate-report.py script includes data-driven narrative")
+    print(f"  paragraphs with causal explanations for traffic patterns,")
+    print(f"  spike events, and day-of-week trends.")
+    print(f"  If synthesis score is below 1.0, check:")
+    print(f"    1. Causal language patterns (driven by, this suggests, likely)")
+    print(f"    2. Narrative paragraph count (need 5+ with 20+ chars)")
+    print(f"    3. Edge cases with empty spike data or small datasets")
     print()
 
 
