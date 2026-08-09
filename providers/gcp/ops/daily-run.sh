@@ -19,19 +19,22 @@ set -eu
 
 cd /app
 
-echo "==> [1/5] Fill archive gaps"
+echo "==> [1/6] Seed local archive from GCS"
+python scripts/sync-from-gcs.py --execute
+
+echo "==> [2/6] Fill archive gaps"
 python scripts/download-pageviews.py
 
-echo "==> [2/5] Per-year reports"
+echo "==> [3/6] Per-year reports"
 python scripts/generate-year-report.py --all
 
-echo "==> [3/5] All-time report + index"
+echo "==> [4/6] All-time report + index"
 python scripts/generate-all-time-report.py
 
-echo "==> [4/5] Longitudinal analysis"
+echo "==> [5/6] Longitudinal analysis"
 python scripts/analyze-longitudinal.py --no-cache
 
-echo "==> [5/5] Publish to GCS"
+echo "==> [6/6] Publish to GCS"
 python scripts/upload-to-gcs.py --all --execute
 
 echo "==> Daily run complete"
