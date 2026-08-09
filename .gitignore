@@ -13,8 +13,17 @@ data/*.json
 data/*.db
 *.db
 data/enriched_metadata/*.json
+# Regenerable analysis caches (these patterns are non-recursive, so each dir needs its own line)
+data/longitudinal/
 reports/*.html
+reports/by-year/*.html
 **.DS_Store
+
+# Scratch notebook, not part of the pipeline
+wikipedia-dirty.ipynb
+
+# Session worktrees live inside the canonical clone
+.worktrees/
 
 uv.lock
 

@@ -9,7 +9,7 @@ Steps (run once daily via Cloud Scheduler):
   5. Upload HTML report to GCS (public)
 
 Environment variables:
-  BUCKET_NAME   GCS bucket (default: wikipedia-cortex-data)
+  BUCKET_NAME   GCS bucket (default: wikipedia-cortex-data); GCS_BUCKET is accepted as an alias
   REPORT_DAYS   Days of history to include in report (default: 30)
   GCP_PROJECT   GCP project ID (default: wikipedia-cortex)
 """
@@ -38,7 +38,13 @@ logger = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-BUCKET_NAME = os.environ.get("BUCKET_NAME", "wikipedia-cortex-data")
+# GCS_BUCKET is the name ops/run-local.sh passes; BUCKET_NAME is the original Cloud Run name.
+# Both are honoured so neither entry point silently falls back to the default.
+BUCKET_NAME = (
+    os.environ.get("BUCKET_NAME")
+    or os.environ.get("GCS_BUCKET")
+    or "wikipedia-cortex-data"
+)
 REPORT_DAYS = int(os.environ.get("REPORT_DAYS", "30"))
 GCP_PROJECT = os.environ.get("GCP_PROJECT", "wikipedia-cortex")
 

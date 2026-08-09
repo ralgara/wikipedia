@@ -2,7 +2,9 @@
 # Build context: repo root
 #   docker build --platform linux/amd64 -f providers/gcp/Dockerfile -t wikipedia-pipeline .
 
-FROM python:3.12-alpine
+# amd64 is pinned in the FROM line, not left to a --platform build flag: the image is built
+# on an arm64 Mac as often as on the x86 PC, and an arm64 image silently fails on the target.
+FROM --platform=linux/amd64 python:3.12-alpine
 
 WORKDIR /app
 

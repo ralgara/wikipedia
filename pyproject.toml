@@ -24,4 +24,6 @@ dependencies = [
     "python-louvain>=0.16",
     "rich>=13.0.0",
     "requests>=2.31.0",
+    "google-cloud-storage>=3.13.1",
+    "anthropic>=0.121.0",
 ]
