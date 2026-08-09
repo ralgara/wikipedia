@@ -30,7 +30,6 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy import stats as scipy_stats
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))

@@ -1,0 +1,33 @@
+# providers/gcp/compose/docker-compose.yml
+# Daily Wikipedia pipeline, as it runs on the Spot VM.
+#
+# Deployed to /opt/wikipedia/docker-compose.yml via instance metadata (see ops/vm.sh), so the
+# repo stays the single source of truth and the VM never needs a git clone or repo credentials.
+#
+# This is a batch job, not a service: `restart: "no"` and it is invoked with
+# `docker compose run --rm pipeline`, never `up -d`.
+#
+# Credentials: none here. The VM runs as wikipedia-pipeline@wikipedia-cortex.iam.gserviceaccount.com
+# and the container reaches the GCE metadata server for Application Default Credentials, so there
+# is no key file to mount, rotate, or lose. Only ANTHROPIC_API_KEY comes from ./.env, which
+# startup.sh writes from Secret Manager on each boot.
+name: wikipedia
+
+services:
+  pipeline:
+    image: ${PIPELINE_IMAGE:-us-east4-docker.pkg.dev/wikipedia-cortex/wikipedia/pipeline:latest}
+    entrypoint: ["/bin/sh", "/app/daily-run.sh"]
+    volumes:
+      # The archive persists on the boot disk across runs. Re-pulling ~925MB from GCS every
+      # day would work but is slower and pointless while the disk survives (the instance is
+      # provisioned with --instance-termination-action=STOP, so preemption keeps the disk).
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ./daily-run.sh:/app/daily-run.sh:ro
+    env_file:
+      - ./.env
+    environment:
+      GCS_BUCKET: ${GCS_BUCKET:-wikipedia-cortex-data}
+      GCP_PROJECT: ${GCP_PROJECT:-wikipedia-cortex}
+      MPLBACKEND: Agg
+    restart: "no"

@@ -17,3 +17,8 @@ google-cloud-storage>=2.10.0
 
 # scipy, PyWavelets, statsmodels are intentionally excluded —
 # they're used by local analysis scripts only, not the pipeline.
+
+# Spike narratives (shared/wikipedia/narratives.py). Undeclared until 2026-08-08, which is
+# why every report had empty narrative boxes: batch_generate caught the ImportError and
+# degraded to "Narrative unavailable" on every call.
+anthropic>=0.40.0
