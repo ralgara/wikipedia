@@ -48,6 +48,16 @@ DEFAULT_BUCKET = 'wikipedia-cortex-data'
 DATA_PREFIX = 'wikipedia/pageviews'
 REPORTS_PREFIX = 'reports'
 
+# Derived artifacts that are expensive to rebuild and NOT reproducible. narratives_cache.json is
+# 242 LLM-generated spike narratives; regenerating it costs 242 API calls and — because the model
+# is non-deterministic — produces different prose for the same events, silently rewriting the
+# narrative text in all 12 year reports. Before 2026-08-11 this file lived only on whichever host
+# happened to run the pipeline, so it diverged unnoticed between the Mac and cortex-runner, and
+# again when the job moved to warp-host. The bucket is the durable copy of the archive; it has to
+# be the durable copy of this too.
+DERIVED_PREFIX = 'wikipedia/derived'
+DERIVED_FILES = ['narratives_cache.json']
+
 PAGEVIEWS_RE = re.compile(r'pageviews_(\d{8})\.json$')
 
 # The bucket grants allUsers:objectViewer at the IAM level with uniform bucket-level access,
@@ -96,6 +106,19 @@ def collect_reports() -> list[tuple[Path, str]]:
     return pending
 
 
+def collect_derived() -> list[tuple[Path, str]]:
+    """Derived artifacts → (path, key) pairs. Always overwrite, like reports."""
+    pending = []
+    for name in DERIVED_FILES:
+        path = DATA_DIR / name
+        if path.exists():
+            pending.append((path, f'{DERIVED_PREFIX}/{name}'))
+        else:
+            print(f'  derived: {name} absent locally — skipping')
+    print(f'  derived: {len(pending)} to upload (always overwritten)')
+    return pending
+
+
 def upload(bucket, items: list[tuple[Path, str]], content_type: str, execute: bool) -> int:
     total = 0
     for i, (path, key) in enumerate(items, 1):
@@ -114,7 +137,9 @@ def main():
     parser = argparse.ArgumentParser(description='Sync local data/ and reports/ to GCS')
     parser.add_argument('--data', action='store_true', help='Sync data/*.json (skips dates already in the bucket)')
     parser.add_argument('--reports', action='store_true', help='Sync reports/**/*.html (always overwrites)')
-    parser.add_argument('--all', action='store_true', help='Both --data and --reports')
+    parser.add_argument('--derived', action='store_true',
+                        help='Sync data/narratives_cache.json (always overwrites)')
+    parser.add_argument('--all', action='store_true', help='--data, --reports, and --derived')
     parser.add_argument('--execute', action='store_true',
                         help='Actually upload. Without this the script only reports what it would do.')
     parser.add_argument('--dry-run', action='store_true',
@@ -125,8 +150,9 @@ def main():
 
     do_data = args.data or args.all
     do_reports = args.reports or args.all
-    if not (do_data or do_reports):
-        parser.error('nothing selected — pass --data, --reports, or --all')
+    do_derived = args.derived or args.all
+    if not (do_data or do_reports or do_derived):
+        parser.error('nothing selected — pass --data, --reports, --derived, or --all')
 
     execute = args.execute and not args.dry_run
 
@@ -137,6 +163,7 @@ def main():
 
     data_items = collect_data(bucket, skip_existing=True) if do_data else []
     report_items = collect_reports() if do_reports else []
+    derived_items = collect_derived() if do_derived else []
 
     total = 0
     if data_items:
@@ -145,8 +172,11 @@ def main():
     if report_items:
         print('\nReports:')
         total += upload(bucket, report_items, 'text/html', execute)
+    if derived_items:
+        print('\nDerived:')
+        total += upload(bucket, derived_items, 'application/json', execute)
 
-    n = len(data_items) + len(report_items)
+    n = len(data_items) + len(report_items) + len(derived_items)
     verb = 'Uploaded' if execute else 'Would upload'
     print(f'\n{verb} {n} file(s), {total/1024/1024:.1f} MB')
 

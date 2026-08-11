@@ -8,6 +8,7 @@ the same region, and does not hammer a public API for data we already have.
 
     uv run python scripts/sync-from-gcs.py              # dry run (the default)
     uv run python scripts/sync-from-gcs.py --execute
+    uv run python scripts/sync-from-gcs.py --execute --refresh-derived   # bucket's cache wins
 
 Idempotent and cheap once warm: one bucket listing, then downloads only what is missing.
 
@@ -32,6 +33,35 @@ DATA_DIR = ROOT / 'data'
 DEFAULT_BUCKET = 'wikipedia-cortex-data'
 DATA_PREFIX = 'wikipedia/pageviews'
 
+# See upload-to-gcs.py for why these live in the bucket: narratives_cache.json is expensive to
+# rebuild (242 LLM calls) and NOT reproducible — regenerating it rewrites the narrative prose in
+# every year report. A fresh host must inherit the canonical copy rather than mint its own.
+DERIVED_PREFIX = 'wikipedia/derived'
+DERIVED_FILES = ['narratives_cache.json']
+
+
+def sync_derived(bucket, data_dir: Path, execute: bool, refresh: bool) -> None:
+    """Pull derived artifacts that are missing locally (or all of them, with --refresh-derived).
+
+    Default is missing-only so a host that has been accumulating narratives does not lose the
+    entries it added since the last publish. --refresh-derived is the explicit 'the bucket wins'
+    switch, for adopting a canonical copy or repairing a diverged host.
+    """
+    for name in DERIVED_FILES:
+        local = data_dir / name
+        blob = bucket.blob(f'{DERIVED_PREFIX}/{name}')
+        if local.exists() and not refresh:
+            print(f'  derived: {name} already local — keeping (use --refresh-derived to overwrite)')
+            continue
+        if not blob.exists():
+            print(f'  derived: {name} not in bucket — skipping')
+            continue
+        if not execute:
+            print(f'    [dry-run] {name}')
+            continue
+        blob.download_to_filename(str(local))
+        print(f'  derived: {name} ← gs://{bucket.name}/{DERIVED_PREFIX}/{name}')
+
 
 def main():
     parser = argparse.ArgumentParser(description='Seed local data/ from GCS')
@@ -39,6 +69,8 @@ def main():
                         help='Actually download. Without this the script only reports what it would do.')
     parser.add_argument('--bucket', default=os.environ.get('GCS_BUCKET', DEFAULT_BUCKET))
     parser.add_argument('--data-dir', type=Path, default=DATA_DIR)
+    parser.add_argument('--refresh-derived', action='store_true',
+                        help='Overwrite local derived artifacts (narratives cache) from the bucket')
     args = parser.parse_args()
 
     args.data_dir.mkdir(parents=True, exist_ok=True)
@@ -60,6 +92,8 @@ def main():
             pending.append((blob, local))
 
     print(f'  {seen} in bucket, {seen - len(pending)} already local, {len(pending)} to download')
+
+    sync_derived(bucket, args.data_dir, args.execute, args.refresh_derived)
 
     if not pending:
         print('\nLocal archive is already in sync.')
