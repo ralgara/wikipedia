@@ -19,6 +19,23 @@ set -eu
 
 cd /app
 
+# Pre-flight: daily-run.sh and the scripts it calls arrive on the VM through TWO different
+# channels — this file via instance metadata (vm.sh update), scripts/ baked into the image
+# (iac/deploy-vm.sh). Push metadata without rebuilding the image and a stage silently refers
+# to a script that isn't there; the reverse leaves a stage that never runs at all. That is
+# exactly how the dashboard stage went missing for two days after ee26d77: the image predated
+# the commit, the metadata was never pushed, and the run "succeeded" every morning.
+# Fail loudly and name the fix rather than letting either half drift unnoticed.
+for s in sync-from-gcs download-pageviews generate-year-report generate-all-time-report \
+         analyze-longitudinal generate-dashboard upload-to-gcs; do
+  if [ ! -f "scripts/$s.py" ]; then
+    echo "FATAL: scripts/$s.py is missing from this image." >&2
+    echo "       The image is older than daily-run.sh. Rebuild and push it first:" >&2
+    echo "         ./providers/gcp/iac/deploy-vm.sh && ./providers/gcp/ops/vm.sh update" >&2
+    exit 1
+  fi
+done
+
 echo "==> [1/7] Seed local archive from GCS"
 python scripts/sync-from-gcs.py --execute
 

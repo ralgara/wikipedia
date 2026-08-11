@@ -256,6 +256,11 @@ JSON files stored per day in `data/pageviews_YYYYMMDD.json`:
 
 For optimized queries, JSON files can be converted to SQLite at `data/pageviews.db`:
 
+> **On-demand only — not a pipeline stage.** No stage of `daily-run.sh` builds or reads this
+> database, and it is absent on the `cortex-runner` VM by design. It exists to serve the v0.4
+> enrichment tooling (`enrich-metadata.py`, `review-flagged.py`). It is fully derivable from
+> `data/*.json` plus `shared/wikipedia/filters.py`, so it can be rebuilt or deleted freely.
+
 **Schema:**
 
 ```sql

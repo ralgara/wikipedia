@@ -1,5 +1,14 @@
 """Content filtering utilities for Wikipedia pageviews data."""
 
+# False positives of should_flag_for_review()'s keyword match, resolved by manual review.
+# These previously lived ONLY in data/pageviews.db as review-flagged.py unhide state, which
+# made that 592 MB file the sole record of a human decision. Encoding them here makes the DB
+# fully derivable from the JSON archive, so it can be rebuilt or discarded freely.
+REVIEW_ALLOWLIST = frozenset({
+    'XXXX_(beer)',   # Queensland beer brand; caught by the 'xxx' keyword
+})
+
+
 def is_content(article: str) -> bool:
     """Returns False for non-content pages (Main_Page, Special:*, etc.)
 
@@ -33,6 +42,9 @@ def should_flag_for_review(article: str) -> bool:
     Returns:
         True if article should be flagged for manual review
     """
+    if article in REVIEW_ALLOWLIST:
+        return False
+
     # Keywords that might indicate adult content
     review_keywords = [
         'pornography', 'pornographic', 'xxx', 'sexual_intercourse',

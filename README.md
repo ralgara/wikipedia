@@ -230,7 +230,9 @@ wikipedia/pageviews/year=2025/month=01/day=28/pageviews_20250128.json
 
 ### SQLite Database
 
-Convert JSON files to SQLite for faster queries:
+Convert JSON files to SQLite for faster queries. This is an **on-demand step, not part of the
+daily pipeline** — it backs the v0.4 enrichment tools and is safe to rebuild or delete at any
+time, since it is fully derived from the JSON archive and the shared content filters.
 
 ```bash
 # Create database from JSON files

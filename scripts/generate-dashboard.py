@@ -200,12 +200,14 @@ def dataset_section(archive: dict, bucket_name: str, use_gcs: bool) -> str:
                 f"{archive['bytes']/1e9:.2f} GB",
                 f"{archive['first']:%Y-%m-%d} → {archive['last']:%Y-%m-%d}"
                 if archive['first'] else '—'),
+        # On-demand v0.4 enrichment artifact, not a pipeline output — no stage builds or
+        # consumes it, and absence is the normal state on every host including the VM.
         _ds_row('SQLite mirror', 'local',
                 'pageviews.db' if sqlite_path.exists() else 'absent',
                 f"{sqlite_path.stat().st_size/1e6:.0f} MB" if sqlite_path.exists() else '—',
                 (f"built {datetime.fromtimestamp(sqlite_path.stat().st_mtime):%Y-%m-%d %H:%M}"
-                 f" &middot; convert-to-sqlite.py") if sqlite_path.exists()
-                else 'not built on this host'),
+                 f" &middot; on-demand, rebuild with convert-to-sqlite.py") if sqlite_path.exists()
+                else 'on-demand (v0.4 tooling) &middot; rebuild with convert-to-sqlite.py'),
         _ds_row('HTML reports', 'local', f'{len(local_reports)} files',
                 f"{sum(p.stat().st_size for p in local_reports)/1e6:.1f} MB", 'regenerated each run'),
         _ds_row('Longitudinal stats', 'local', 'stats.json' if stats_path.exists() else 'absent',
