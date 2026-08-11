@@ -33,7 +33,8 @@ sys.path.insert(0, str(ROOT))
 
 from shared.wikipedia.analysis import detect_spikes, filter_content
 from shared.wikipedia.report_utils import (
-    COLORS, format_number, html_page, make_badge, plot_top_articles, wiki_link,
+    COLORS, format_number, html_page, make_badge, plot_top_articles,
+    setup_plot_style, wiki_link,
 )
 
 DATA_DIR = ROOT / 'data'
@@ -316,6 +317,12 @@ def trends_section(archive: dict, days: int) -> str:
     if cur.empty:
         return '<div class="section warning"><h2>Recent trends</h2><p>No rows in window.</p></div>'
 
+    # Without this the chart renders with matplotlib's defaults — a white plot area and black
+    # tick labels — while fig_to_base64 forces a dark figure background, stranding the x-axis
+    # labels in black on dark and the value labels in near-white on white. Every other report
+    # script calls this; the dashboard did not, and nobody saw it because the stage that
+    # generates the dashboard was itself silently skipped for two days after ee26d77.
+    setup_plot_style()
     top_chart = plot_top_articles(cur, n=15, title=f'Top articles — last {days} days')
 
     movers_html = build_movers(cur, prev, days)

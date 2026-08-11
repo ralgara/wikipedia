@@ -50,6 +50,20 @@ def setup_plot_style():
     sns.set_palette(PALETTE)
 
 
+def _ensure_plot_style() -> None:
+    """Apply the dark theme if the caller forgot to.
+
+    setup_plot_style() mutates global rcParams and every report script is expected to call it
+    once at startup. That is an easy obligation to miss — generate-dashboard.py missed it and
+    shipped a chart with black axis labels on a dark background. The check is deliberately
+    narrow: it fires only when axes.facecolor is still matplotlib's default white, so a caller
+    that has set up its own dark style (generate-report.py, analyze-spikes.py and friends each
+    define their own) is never overridden.
+    """
+    if str(plt.rcParams['axes.facecolor']).lower() in ('white', '#ffffff', 'w'):
+        setup_plot_style()
+
+
 def fig_to_base64(fig) -> str:
     buf = io.BytesIO()
     fig.savefig(buf, format='png', dpi=120, bbox_inches='tight',
@@ -82,6 +96,7 @@ def make_badge(text: str, color: str) -> str:
 # ---------------------------------------------------------------------------
 
 def plot_top_articles(df: pd.DataFrame, n: int = 15, title: str = 'Top Articles') -> str:
+    _ensure_plot_style()
     top = df.groupby('article')['views'].sum().nlargest(n).reset_index().iloc[::-1]
     fig, ax = plt.subplots(figsize=(10, max(4, n * 0.4)))
     bars = ax.barh(top['article'], top['views'], color=COLORS['highlight'], alpha=0.8)
@@ -97,6 +112,7 @@ def plot_top_articles(df: pd.DataFrame, n: int = 15, title: str = 'Top Articles'
 
 
 def plot_spike_examples(df: pd.DataFrame, spike_df: pd.DataFrame, n: int = 4) -> str | None:
+    _ensure_plot_style()
     if spike_df.empty:
         return None
     top = spike_df.head(n)
