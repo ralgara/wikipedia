@@ -303,7 +303,14 @@ def generate_index_html(df: pd.DataFrame) -> str:
 def main():
     parser = argparse.ArgumentParser(description='Generate all-time report and index')
     parser.add_argument('--no-narratives', action='store_true', help='Skip LLM spike narratives')
+    parser.add_argument('--refresh-narratives', action='store_true',
+                        help='Re-fetch cached narratives that are refusals rather than '
+                             'explanations. Overwrites those cache entries; leaves good '
+                             'ones untouched. Off by default — the cache is not reproducible.')
     args = parser.parse_args()
+
+    if args.refresh_narratives and args.no_narratives:
+        parser.error('--refresh-narratives cannot be combined with --no-narratives')
 
     print("Loading all data...")
     df_raw = load_all_data(DATA_DIR)
@@ -318,7 +325,8 @@ def main():
 
     narratives: dict = {}
     if not args.no_narratives and not spike_df.empty:
-        narratives = batch_generate(spike_df.to_dict('records'), top_n=20)
+        narratives = batch_generate(spike_df.to_dict('records'), top_n=20,
+                                    refresh_degraded=args.refresh_narratives)
 
     print("Computing longitudinal data (top 10 articles)...")
     long_df = longitudinal_data(df, top_n=10)

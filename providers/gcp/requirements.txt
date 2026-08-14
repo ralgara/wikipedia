@@ -21,4 +21,9 @@ google-cloud-storage>=2.10.0
 # Spike narratives (shared/wikipedia/narratives.py). Undeclared until 2026-08-08, which is
 # why every report had empty narrative boxes: batch_generate caught the ImportError and
 # degraded to "Narrative unavailable" on every call.
-anthropic>=0.40.0
+#
+# Floor raised 2026-08-14 to match pyproject.toml: the narrator now passes output_config
+# and the web_search_20260209 tool, which older clients do not model. A too-old anthropic
+# fails inside _call_api's except and the symptom is a silent return to refusals — not an
+# error. Keep this pin and the pyproject one in step.
+anthropic>=0.121.0

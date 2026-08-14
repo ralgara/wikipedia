@@ -193,7 +193,8 @@ def generate_year_html(df: pd.DataFrame, year: int, prior_total: int | None,
 # Main
 # ---------------------------------------------------------------------------
 
-def process_year(year: int, all_df: pd.DataFrame | None, narratives_flag: bool) -> None:
+def process_year(year: int, all_df: pd.DataFrame | None, narratives_flag: bool,
+                 refresh_degraded: bool = False) -> None:
     print(f"\n=== {year} ===")
 
     if all_df is not None:
@@ -226,7 +227,8 @@ def process_year(year: int, all_df: pd.DataFrame | None, narratives_flag: bool) 
     # Narratives
     narratives: dict = {}
     if narratives_flag and not spike_df.empty:
-        narratives = batch_generate(spike_df.to_dict('records'))
+        narratives = batch_generate(spike_df.to_dict('records'),
+                                    refresh_degraded=refresh_degraded)
 
     # Plots
     setup_plot_style()
@@ -253,6 +255,10 @@ def main():
     parser.add_argument('year', nargs='?', type=int, help='Year to generate (e.g. 2025)')
     parser.add_argument('--all', action='store_true', help='Generate reports for all years in archive')
     parser.add_argument('--no-narratives', action='store_true', help='Skip LLM spike narratives')
+    parser.add_argument('--refresh-narratives', action='store_true',
+                        help='Re-fetch cached narratives that are refusals rather than '
+                             'explanations. Overwrites those cache entries; leaves good '
+                             'ones untouched. Off by default — the cache is not reproducible.')
     args = parser.parse_args()
 
     if not args.year and not args.all:
@@ -260,15 +266,18 @@ def main():
 
     narratives_flag = not args.no_narratives
 
+    if args.refresh_narratives and not narratives_flag:
+        parser.error('--refresh-narratives cannot be combined with --no-narratives')
+
     if args.all:
         print("Loading all data...")
         all_df = load_all_data(DATA_DIR)
         years = sorted(all_df['date'].dt.year.unique())
         print(f"Years in archive: {years[0]}–{years[-1]}")
         for year in years:
-            process_year(year, all_df, narratives_flag)
+            process_year(year, all_df, narratives_flag, args.refresh_narratives)
     else:
-        process_year(args.year, None, narratives_flag)
+        process_year(args.year, None, narratives_flag, args.refresh_narratives)
 
     print("\nDone.")
 
