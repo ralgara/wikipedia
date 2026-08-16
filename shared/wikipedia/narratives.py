@@ -12,9 +12,22 @@ the report then published verbatim on a public page.
 Cost note: search runs only for spikes that are not already cached, and the cache is
 durable (published to the bucket under wikipedia/derived/). A steady-state daily run
 looks up a handful of new spikes, not the whole archive.
+
+Three cost controls, added 2026-08-16 after the first full backfill exhausted the API
+credit balance mid-run:
+
+  * Sonnet rather than Opus. This is a short factual lookup with a two-sentence answer,
+    not a reasoning task.
+  * Search only for spikes the model cannot already explain. Measured against the cache,
+    spikes before 2024 were answered from training knowledge 95% of the time; paying for
+    a search on those buys nothing. See SEARCH_AFTER.
+  * A hard ceiling on calls per process (MAX_CALLS_PER_RUN), because `--all` makes one
+    batch_generate call per year and a per-batch limit bounds none of them.
 """
 
 import json
+import os
+from datetime import date
 from pathlib import Path
 
 # Resolve cache path relative to this file:
@@ -24,8 +37,27 @@ CACHE_FILE = _REPO_ROOT / 'data' / 'narratives_cache.json'
 
 # web_search_20260209 requires Opus 4.6+ / Sonnet 4.6+; it is not available on Haiku,
 # which is what this used to run on. The model and the tool are one decision, not two.
-MODEL = 'claude-opus-5'
+MODEL = os.environ.get('WIKI_NARRATIVE_MODEL', 'claude-sonnet-5')
 _SEARCH_TOOL = {'type': 'web_search_20260209', 'name': 'web_search', 'max_uses': 4}
+
+# Spikes on or after this date get the search tool; earlier ones are answered from
+# training knowledge alone. The boundary is empirical, not a published cutoff: in the
+# 243-entry cache, 2015-2023 spikes came back unattributed 5% of the time (10/201) while
+# 2024 was 35% and 2025-2026 effectively total. Search is worth paying for where the
+# model is actually blind, and 2024 is where that starts.
+#
+# It is deliberately conservative — a spike just before the boundary that the model
+# cannot place returns a refusal, and --refresh-narratives retries it later. Moving the
+# boundary earlier costs money on spikes that never needed it.
+SEARCH_AFTER = date(2024, 1, 1)
+
+# Ceiling on API calls for the life of the process, not per batch. `generate-year-report
+# --all` calls batch_generate once per year, so a per-batch cap bounds nothing; this is
+# what stops a full backfill from running away. Raise it deliberately for a big refresh
+# (WIKI_NARRATIVE_MAX_CALLS=200) rather than removing it.
+MAX_CALLS_PER_RUN = int(os.environ.get('WIKI_NARRATIVE_MAX_CALLS', '40'))
+
+_calls_made = 0
 
 # The exact string the model is told to emit when it genuinely cannot attribute a
 # spike. Kept as a constant so callers can recognise it rather than pattern-matching
@@ -56,26 +88,54 @@ class NarrativeUnavailable(Exception):
     return REFUSAL` wrote 16 refusals that looked exactly like genuine ones.
     """
 
-_SYSTEM = (
+_TASK = (
     "You analyze Wikipedia traffic data. "
     "Given an article name and the date of an unusual traffic spike, write 1–2 sentences "
     "explaining the most likely real-world cause (a news event, death, film/game release, "
     "sports result, anniversary, etc.).\n\n"
-    "Search the web for what happened involving that subject on or just before the spike "
-    "date. The spike dates you are given are frequently more recent than your training "
-    "data, so do not answer from memory alone — a spike you cannot place is almost always "
-    "one you have not looked up yet. Prefer contemporaneous reporting from around the "
-    "spike date over later retrospectives.\n\n"
+)
+
+_STYLE = (
     "Write for a reader looking at a traffic chart: name the event and why it drove "
     "people to that article. No preamble, no hedging about your sources, no meta-commentary "
-    "about searching.\n\n"
+    "about how you found it.\n\n"
     "Length is a hard constraint, not a guideline: at most two sentences and about 35 "
     "words. This is rendered as a caption inside a table cell, so a paragraph breaks the "
     "layout. Name the event, the date if it differs from the spike, and the connection — "
     "drop supporting detail (venue, ratings, guest appearances, runtimes, box office) "
     "unless it is the actual reason for the spike.\n\n"
+)
+
+_SYSTEM_SEARCH = _TASK + (
+    "Search the web for what happened involving that subject on or just before the spike "
+    "date. The spike dates you are given are frequently more recent than your training "
+    "data, so do not answer from memory alone — a spike you cannot place is almost always "
+    "one you have not looked up yet. Prefer contemporaneous reporting from around the "
+    "spike date over later retrospectives.\n\n"
+) + _STYLE + (
     f"If searching does not turn up a plausible cause, respond with exactly: {REFUSAL}"
 )
+
+# Used for spikes old enough that the model already knows them. No search tool is passed
+# alongside this prompt, so promising one would just invite a hedge about not having it.
+_SYSTEM_MEMORY = _TASK + _STYLE + (
+    "Draw on what you know. Do not guess: a plausible-sounding event you are not actually "
+    "confident about is worse than no narrative, because it is published unlabelled.\n\n"
+    f"If you cannot identify a cause with reasonable confidence, respond with exactly: {REFUSAL}"
+)
+
+
+def _wants_search(date_str: str) -> bool:
+    """Whether this spike is recent enough to be worth a web search.
+
+    Unparseable dates get search — the conservative direction, since the cost of a
+    needless search is a few cents and the cost of skipping a needed one is a refusal
+    published on a public page.
+    """
+    try:
+        return date.fromisoformat(date_str[:10]) >= SEARCH_AFTER
+    except (ValueError, TypeError):
+        return True
 
 
 def is_refusal(narrative: str) -> bool:
@@ -131,7 +191,14 @@ def _text_of(resp) -> str:
 
 
 def _call_api(client, article: str, date_str: str, multiplier: float, views: int,
-              model: str = MODEL, use_search: bool = True) -> str:
+              model: str = MODEL, use_search: bool | None = None) -> str:
+    """Generate one narrative.
+
+    use_search=None (the default) decides per spike date via _wants_search. Pass True or
+    False to force it.
+    """
+    if use_search is None:
+        use_search = _wants_search(date_str)
     msg = (
         f"Article: {article.replace('_', ' ')}\n"
         f"Spike date: {date_str}\n"
@@ -143,11 +210,11 @@ def _call_api(client, article: str, date_str: str, multiplier: float, views: int
 
     kwargs = {
         'model': model,
-        # Headroom, not a target. Thinking is on by default on Opus 5 and max_tokens
+        # Headroom, not a target. Thinking is on by default on Sonnet 5 and max_tokens
         # caps thinking + visible text together, so the old 120 would truncate before
         # the model said anything. The output itself is two sentences.
         'max_tokens': 4096,
-        'system': _SYSTEM,
+        'system': _SYSTEM_SEARCH if use_search else _SYSTEM_MEMORY,
         # A short factual lookup. Low effort is both cheaper and better calibrated
         # here than the default; it also keeps thinking from crowding the budget.
         'output_config': {'effort': 'low'},
@@ -182,7 +249,7 @@ def _call_api(client, article: str, date_str: str, multiplier: float, views: int
 
 
 def batch_generate(spikes, top_n: int = 20, verbose: bool = True,
-                   model: str = MODEL, use_search: bool = True,
+                   model: str = MODEL, use_search: bool | None = None,
                    refresh_degraded: bool = False) -> dict:
     """Generate narratives for up to top_n spikes.
 
@@ -192,8 +259,9 @@ def batch_generate(spikes, top_n: int = 20, verbose: bool = True,
         top_n:  max number of spikes to process.
         verbose: print progress.
         model:  override the narrator model.
-        use_search: give the narrator the web_search tool. Off answers from training
-                data alone, which is what produced the refusals this replaced.
+        use_search: force the web_search tool on or off. None (default) decides per
+                spike date — see SEARCH_AFTER. Forcing False answers from training data
+                alone, which is what produced the refusals this replaced.
         refresh_degraded: re-fetch cached entries that are refusals rather than
                 explanations. Off by default — the cache is expensive and
                 non-reproducible, so overwriting it is always an explicit act.
@@ -220,7 +288,11 @@ def batch_generate(spikes, top_n: int = 20, verbose: bool = True,
         return results
 
     if verbose:
-        how = 'with web search' if use_search else 'from training knowledge only'
+        if use_search is None:
+            searched = sum(1 for _, _, d, _, _ in to_fetch if _wants_search(d))
+            how = f"{searched} searched, {len(to_fetch) - searched} from memory"
+        else:
+            how = 'with web search' if use_search else 'from training knowledge only'
         print(f"  Fetching {len(to_fetch)} spike narrative(s) via {model} ({how})...")
 
     try:
@@ -231,13 +303,19 @@ def batch_generate(spikes, top_n: int = 20, verbose: bool = True,
             results[key] = "Narrative unavailable (pip install anthropic)"
         return results
 
+    global _calls_made
     consecutive_failures = 0
     failed = 0
+    capped = 0
 
     for key, article, date_str, multiplier, views in to_fetch:
         if consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
             failed += 1
             continue
+        if _calls_made >= MAX_CALLS_PER_RUN:
+            capped += 1
+            continue
+        _calls_made += 1
         try:
             narrative = _call_api(client, article, date_str, multiplier, views,
                                   model=model, use_search=use_search)
@@ -265,6 +343,12 @@ def batch_generate(spikes, top_n: int = 20, verbose: bool = True,
         if consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
             print(f"  Stopped calling after {_MAX_CONSECUTIVE_FAILURES} consecutive "
                   f"failures — check credentials, credit balance, and rate limits.")
+
+    if capped:
+        # Also loud. A silent cap looks exactly like "those spikes had no cause".
+        print(f"  NOTE: {capped} narrative(s) skipped — hit the {MAX_CALLS_PER_RUN}-call "
+              f"per-run ceiling. Not cached, so they are retried next run. Raise with "
+              f"WIKI_NARRATIVE_MAX_CALLS to backfill in one pass.")
 
     _save_cache(cache)
     return results
