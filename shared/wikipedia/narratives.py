@@ -191,11 +191,17 @@ def _text_of(resp) -> str:
 
 
 def _call_api(client, article: str, date_str: str, multiplier: float, views: int,
-              model: str = MODEL, use_search: bool | None = None) -> str:
+              model: str = MODEL, use_search: bool | None = None,
+              context: str = '') -> str:
     """Generate one narrative.
 
     use_search=None (the default) decides per spike date via _wants_search. Pass True or
     False to force it.
+
+    `context` is the day's other unusual articles, from baseline.co_spike_context. Without
+    it the model is asked to explain one article on one date in isolation, with no way to
+    know what else the archive says about that day — which is how a spike whose cause was
+    sitting at rank 4 the same morning came back unattributed.
     """
     if use_search is None:
         use_search = _wants_search(date_str)
@@ -204,8 +210,16 @@ def _call_api(client, article: str, date_str: str, multiplier: float, views: int
         f"Spike date: {date_str}\n"
         f"Views on spike day: {views:,}\n"
         f"Multiplier above average: {multiplier:.1f}x\n\n"
-        "What caused this Wikipedia traffic spike?"
     )
+    if context:
+        msg += (
+            "Other articles that were also unusual that day:\n"
+            f"{context}\n\n"
+            "These may share a cause with the spike, or may be unrelated — check rather "
+            "than assume, and do not mention them unless one is genuinely part of the "
+            "explanation.\n\n"
+        )
+    msg += "What caused this Wikipedia traffic spike?"
     messages = [{'role': 'user', 'content': msg}]
 
     kwargs = {
@@ -250,7 +264,8 @@ def _call_api(client, article: str, date_str: str, multiplier: float, views: int
 
 def batch_generate(spikes, top_n: int = 20, verbose: bool = True,
                    model: str = MODEL, use_search: bool | None = None,
-                   refresh_degraded: bool = False) -> dict:
+                   refresh_degraded: bool = False,
+                   context: dict[str, str] | None = None) -> dict:
     """Generate narratives for up to top_n spikes.
 
     Args:
@@ -262,6 +277,9 @@ def batch_generate(spikes, top_n: int = 20, verbose: bool = True,
         use_search: force the web_search tool on or off. None (default) decides per
                 spike date — see SEARCH_AFTER. Forcing False answers from training data
                 alone, which is what produced the refusals this replaced.
+        context: optional "article::YYYY-MM-DD" -> same-day co-spike blurb, from
+                baseline.co_spike_context. Absent, the model explains each spike in
+                isolation.
         refresh_degraded: re-fetch cached entries that are refusals rather than
                 explanations. Off by default — the cache is expensive and
                 non-reproducible, so overwriting it is always an explicit act.
@@ -283,6 +301,7 @@ def batch_generate(spikes, top_n: int = 20, verbose: bool = True,
         else:
             to_fetch.append((key, spike['article'], date_str,
                              float(spike['multiplier']), int(spike['spike_views'])))
+
 
     if not to_fetch:
         return results
@@ -318,7 +337,8 @@ def batch_generate(spikes, top_n: int = 20, verbose: bool = True,
         _calls_made += 1
         try:
             narrative = _call_api(client, article, date_str, multiplier, views,
-                                  model=model, use_search=use_search)
+                                  model=model, use_search=use_search,
+                                  context=(context or {}).get(key, ''))
         except NarrativeUnavailable as exc:
             # Not cached, so the next run retries this spike rather than inheriting
             # a refusal that was really an outage.
