@@ -28,6 +28,7 @@ from shared.wikipedia.analysis import (
     load_all_data, filter_content, detect_spikes, longitudinal_data,
 )
 from shared.wikipedia.narratives import batch_generate
+from shared.wikipedia import baseline
 from shared.wikipedia.report_utils import (
     COLORS, PALETTE, setup_plot_style, fig_to_base64, format_number,
     wiki_link, make_badge, plot_top_articles, plot_spike_examples, html_page,
@@ -303,6 +304,10 @@ def generate_index_html(df: pd.DataFrame) -> str:
 def main():
     parser = argparse.ArgumentParser(description='Generate all-time report and index')
     parser.add_argument('--no-narratives', action='store_true', help='Skip LLM spike narratives')
+    parser.add_argument('--spike-method', choices=['residual', 'flat'], default='residual',
+                        help="How to score spikes. 'residual' (default) measures against an "
+                             'expectation baseline, so fixtures and calendar recurrences stop '
+                             "dominating. 'flat' is the original per-article mean.")
     parser.add_argument('--refresh-narratives', action='store_true',
                         help='Re-fetch cached narratives that are refusals rather than '
                              'explanations. Overwrites those cache entries; leaves good '
@@ -320,13 +325,22 @@ def main():
     print(f"  After filter: {len(df):,} records")
 
     print("Detecting spikes...")
-    spike_df = detect_spikes(df)
+    context: dict | None = None
+    if args.spike_method == 'flat':
+        spike_df = detect_spikes(df)
+    else:
+        print("  fitting expectation baseline...")
+        enriched = baseline.add_expectation(df, seasonal=True)
+        spike_df = baseline.detect_spikes_residual(enriched=enriched)
     print(f"  {len(spike_df)} spiking articles found")
 
     narratives: dict = {}
     if not args.no_narratives and not spike_df.empty:
+        if args.spike_method != 'flat':
+            context = baseline.co_spike_context(enriched, spike_df.head(20))
         narratives = batch_generate(spike_df.to_dict('records'), top_n=20,
-                                    refresh_degraded=args.refresh_narratives)
+                                    refresh_degraded=args.refresh_narratives,
+                                    context=context)
 
     print("Computing longitudinal data (top 10 articles)...")
     long_df = longitudinal_data(df, top_n=10)

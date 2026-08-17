@@ -121,13 +121,14 @@ def weekday_factors(df: pd.DataFrame, levels: pd.DataFrame) -> pd.DataFrame:
 
     work = df.merge(eligible, on='article')
     work['dow'] = work['date'].dt.dayofweek
-    factors = (
-        work.groupby(['article', 'dow'])
-        .apply(lambda g: g['views'].median() / g['level'].iloc[0], include_groups=False)
-        .rename('dow_factor')
-        .reset_index()
-    )
-    return factors
+    # Aggregate first, divide after. The obvious groupby().apply(lambda g: ...) form both
+    # runs a Python callable per group over millions of rows and, with
+    # include_groups=False, hands the callable a frame the merged 'level' column has been
+    # stripped from — so it raises KeyError on exactly the column it needs.
+    med = work.groupby(['article', 'dow'])['views'].median().reset_index()
+    med = med.merge(eligible, on='article')
+    med['dow_factor'] = med['views'] / med['level']
+    return med[['article', 'dow', 'dow_factor']]
 
 
 def dayofyear_factors(df: pd.DataFrame, levels: pd.DataFrame) -> pd.DataFrame:
@@ -240,10 +241,11 @@ def add_expectation(df: pd.DataFrame, seasonal: bool = True) -> pd.DataFrame:
     return out
 
 
-def detect_spikes_residual(df: pd.DataFrame, threshold: float = 3.0,
+def detect_spikes_residual(df: pd.DataFrame | None = None, threshold: float = 3.0,
                            min_views: int = MIN_VIEWS_FOR_SPIKE,
                            seasonal: bool = True,
-                           per_article: bool = True) -> pd.DataFrame:
+                           per_article: bool = True,
+                           enriched: pd.DataFrame | None = None) -> pd.DataFrame:
     """Spikes scored against the expectation baseline rather than a flat mean.
 
     Deliberately NOT a modification of analysis.detect_spikes: existing reports keep
@@ -256,12 +258,19 @@ def detect_spikes_residual(df: pd.DataFrame, threshold: float = 3.0,
         per_article: keep only each article's largest spike, matching detect_spikes'
             shape. False returns every article-day above threshold, which is what
             co-spike analysis wants.
+        enriched: a frame already through add_expectation. Supply it when you also need
+            the enriched rows for co_spike_context, or when scoring many year slices
+            against one baseline — refitting per slice would both waste the work and,
+            worse, give each year a different notion of "expected".
 
     Returns columns: article, spike_date, spike_views, expected, residual, multiplier,
     band, days_present — a superset of detect_spikes' columns, so report code that reads
     'multiplier' keeps working.
     """
-    enriched = add_expectation(df, seasonal=seasonal)
+    if enriched is None:
+        if df is None:
+            raise ValueError('detect_spikes_residual needs either df or enriched')
+        enriched = add_expectation(df, seasonal=seasonal)
     spikes = enriched[(enriched['residual'] > threshold) &
                       (enriched['views'] >= min_views)].copy()
 

@@ -23,6 +23,7 @@ from shared.wikipedia.analysis import (
     load_all_data, load_year_data, filter_content, detect_spikes,
 )
 from shared.wikipedia.narratives import batch_generate
+from shared.wikipedia import baseline
 from shared.wikipedia.report_utils import (
     COLORS, setup_plot_style, fig_to_base64, format_number,
     wiki_link, make_badge, plot_top_articles, plot_spike_examples, html_page,
@@ -194,7 +195,8 @@ def generate_year_html(df: pd.DataFrame, year: int, prior_total: int | None,
 # ---------------------------------------------------------------------------
 
 def process_year(year: int, all_df: pd.DataFrame | None, narratives_flag: bool,
-                 refresh_degraded: bool = False) -> None:
+                 refresh_degraded: bool = False, enriched_all: pd.DataFrame | None = None,
+                 spike_method: str = 'residual') -> None:
     print(f"\n=== {year} ===")
 
     if all_df is not None:
@@ -222,13 +224,27 @@ def process_year(year: int, all_df: pd.DataFrame | None, narratives_flag: bool,
             pass
 
     # Spikes
-    spike_df = detect_spikes(df)
+    context: dict | None = None
+    if spike_method == 'flat':
+        spike_df = detect_spikes(df)
+    else:
+        # Score against the whole archive's baseline where we have it. Fitting a
+        # baseline per year would give each year its own notion of 'expected', and
+        # day-of-year factors need more than one year to exist at all.
+        if enriched_all is not None:
+            enriched = enriched_all[enriched_all['date'].dt.year == year]
+        else:
+            enriched = baseline.add_expectation(df, seasonal=False)
+        spike_df = baseline.detect_spikes_residual(enriched=enriched)
+        if not spike_df.empty:
+            context = baseline.co_spike_context(enriched, spike_df.head(20))
 
     # Narratives
     narratives: dict = {}
     if narratives_flag and not spike_df.empty:
         narratives = batch_generate(spike_df.to_dict('records'),
-                                    refresh_degraded=refresh_degraded)
+                                    refresh_degraded=refresh_degraded,
+                                    context=context)
 
     # Plots
     setup_plot_style()
@@ -255,6 +271,11 @@ def main():
     parser.add_argument('year', nargs='?', type=int, help='Year to generate (e.g. 2025)')
     parser.add_argument('--all', action='store_true', help='Generate reports for all years in archive')
     parser.add_argument('--no-narratives', action='store_true', help='Skip LLM spike narratives')
+    parser.add_argument('--spike-method', choices=['residual', 'flat'], default='residual',
+                        help="How to score spikes. 'residual' (default) measures against an "
+                             'expectation baseline, so fixtures and calendar recurrences stop '
+                             "dominating. 'flat' is the original per-article mean, kept so "
+                             'earlier reports can be reproduced.')
     parser.add_argument('--refresh-narratives', action='store_true',
                         help='Re-fetch cached narratives that are refusals rather than '
                              'explanations. Overwrites those cache entries; leaves good '
@@ -274,10 +295,16 @@ def main():
         all_df = load_all_data(DATA_DIR)
         years = sorted(all_df['date'].dt.year.unique())
         print(f"Years in archive: {years[0]}–{years[-1]}")
+        enriched_all = None
+        if args.spike_method == 'residual':
+            print('Fitting expectation baseline across the archive...')
+            enriched_all = baseline.add_expectation(filter_content(all_df), seasonal=True)
         for year in years:
-            process_year(year, all_df, narratives_flag, args.refresh_narratives)
+            process_year(year, all_df, narratives_flag, args.refresh_narratives,
+                         enriched_all, args.spike_method)
     else:
-        process_year(args.year, None, narratives_flag, args.refresh_narratives)
+        process_year(args.year, None, narratives_flag, args.refresh_narratives,
+                     None, args.spike_method)
 
     print("\nDone.")
 

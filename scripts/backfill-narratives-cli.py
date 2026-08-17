@@ -74,10 +74,15 @@ def _clean(text: str) -> str:
     return text.strip()
 
 
-def generate(article: str, date_str: str, model: str, timeout: int) -> tuple[str, float]:
+def generate(article: str, date_str: str, model: str, timeout: int,
+             context: str = '') -> tuple[str, float]:
     """Return (narrative, cost_usd). Raises RuntimeError if the call fails."""
     subject = article.replace('_', ' ')
     ask = f"Article: {subject}. Wikipedia traffic spike date: {date_str}. What caused it?"
+    if context:
+        ask += ("\n\nOther articles that were also unusual that day:\n" + context +
+                "\n\nThese may share a cause or may be unrelated; check rather than assume, "
+                "and only mention one if it is genuinely part of the explanation.")
     if _wants_search(date_str):
         ask += (" Search the web for what happened involving this subject on or just "
                 "before that date; do not answer from memory alone.")
@@ -118,6 +123,10 @@ def main() -> int:
     ap.add_argument('--model', default=DEFAULT_MODEL)
     ap.add_argument('--timeout', type=int, default=300, help='Per-call timeout, seconds.')
     ap.add_argument('--cache', type=Path, default=CACHE_FILE)
+    ap.add_argument('--context-file', type=Path,
+                    help='JSON from export-cospike-context.py: same-day co-spike blurbs. '
+                         'Without it each spike is explained in isolation, which is how a '
+                         'cause sitting at rank 4 the same morning gets missed.')
     args = ap.parse_args()
 
     if not args.cache.exists():
@@ -125,6 +134,12 @@ def main() -> int:
         return 1
 
     cache = json.loads(args.cache.read_text())
+    context_map: dict[str, str] = {}
+    if args.context_file and args.context_file.exists():
+        context_map = json.loads(args.context_file.read_text())
+        print(f'context: {len(context_map)} block(s) from {args.context_file}')
+    elif args.context_file:
+        print(f'context file {args.context_file} not found — continuing without it')
     degraded = sorted(k for k, v in cache.items() if is_refusal(v))
 
     print(f'{args.cache}: {len(cache)} entries, {len(degraded)} degraded')
@@ -138,7 +153,8 @@ def main() -> int:
         for key in targets:
             article, date_str = key.rsplit('::', 1)
             mode = 'search' if _wants_search(date_str) else 'memory'
-            print(f'  [{mode:6}] {article}  ({date_str})')
+            ctx = 'ctx' if key in context_map else '   '
+            print(f'  [{mode:6}] [{ctx}] {article}  ({date_str})')
         print('\nRe-run with --execute to apply.')
         return 0
 
@@ -156,7 +172,8 @@ def main() -> int:
     for i, key in enumerate(targets, 1):
         article, date_str = key.rsplit('::', 1)
         try:
-            narrative, cost = generate(article, date_str, args.model, args.timeout)
+            narrative, cost = generate(article, date_str, args.model, args.timeout,
+                                       context=context_map.get(key, ''))
         except RuntimeError as exc:
             # Same discipline as the API path: a failed call is not a refusal, so it is
             # not written. The entry stays degraded and is retried next time.
