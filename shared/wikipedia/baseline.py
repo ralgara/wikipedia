@@ -294,11 +294,21 @@ def detect_spikes_residual(df: pd.DataFrame | None = None, threshold: float = 3.
 # Absolute view bands rather than rank bands. Rank is relative to a truncated window, so
 # "remove the top N" re-ranks inside the archive rather than revealing anything below it,
 # and band membership would shift whenever the top moved. Absolute views do not.
+# Calibrated against the archive's actual distribution, not round orders of magnitude.
+# The first version used 1M / 100k / 10k, which sounds principled and stratifies nothing
+# here: it put 88.6% of all article-days in a single band. The reason is that this corpus
+# is already a narrow slice — the daily top 1000 with a censoring line near 9.6k views —
+# so the median article-day is 14,436 views and 71% of them fall between 10k and 25k.
+#
+# These boundaries sit near the p50 / p90 / p99 of the real distribution, which splits the
+# mass roughly 50 / 40 / 9 / 1. They are still ABSOLUTE thresholds, so they stay comparable
+# across days and years and do not move when the top moves — a band's share shifting over
+# time is signal, not an artefact of the scheme.
 BANDS = [
-    (1_000_000, 'attractor'),   # Main_Page-class; a handful per day
-    (100_000, 'major'),         # genuine mass-interest news
-    (10_000, 'middle'),         # where most of the interesting signal lives
-    (0, 'marginal'),            # near the censoring line; presence is itself fragile
+    (150_000, 'headline'),   # ~p99 and up; the day's genuine mass-interest stories
+    (40_000, 'major'),       # ~p90-p99
+    (15_000, 'middle'),      # ~p50-p90; the stratum a global ranking never shows
+    (0, 'threshold'),        # below the median, near the censoring line
 ]
 
 
