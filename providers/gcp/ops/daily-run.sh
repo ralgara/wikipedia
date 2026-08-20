@@ -27,7 +27,8 @@ cd /app
 # the commit, the metadata was never pushed, and the run "succeeded" every morning.
 # Fail loudly and name the fix rather than letting either half drift unnoticed.
 for s in sync-from-gcs download-pageviews generate-year-report generate-all-time-report \
-         analyze-longitudinal generate-dashboard upload-to-gcs; do
+         analyze-longitudinal analyze-bands analyze-correlations generate-dashboard \
+         upload-to-gcs; do
   if [ ! -f "scripts/$s.py" ]; then
     echo "FATAL: scripts/$s.py is missing from this image." >&2
     echo "       The image is older than daily-run.sh. Rebuild and push it first:" >&2
@@ -36,25 +37,42 @@ for s in sync-from-gcs download-pageviews generate-year-report generate-all-time
   fi
 done
 
-echo "==> [1/7] Seed local archive from GCS"
+# Stage order is load-bearing in one place: generate-all-time-report.py builds index.html
+# and links the analysis reports only if their HTML already exists, so it has to run AFTER
+# them. Put it before and a fresh host publishes an index with no links to the analyses,
+# which then silently fixes itself on the second day — the worst kind of bug to chase.
+
+echo "==> [1/9] Seed local archive from GCS"
 python scripts/sync-from-gcs.py --execute
 
-echo "==> [2/7] Fill archive gaps"
+echo "==> [2/9] Fill archive gaps"
 python scripts/download-pageviews.py
 
-echo "==> [3/7] Per-year reports"
+echo "==> [3/9] Per-year reports"
 python scripts/generate-year-report.py --all
 
-echo "==> [4/7] All-time report + index"
-python scripts/generate-all-time-report.py
-
-echo "==> [5/7] Longitudinal analysis"
+echo "==> [4/9] Longitudinal analysis"
 python scripts/analyze-longitudinal.py --no-cache
 
-echo "==> [6/7] Operational dashboard"
+echo "==> [5/9] Tiered band analysis"
+python scripts/analyze-bands.py
+
+# Bounded to a rolling three-year window on purpose. Co-spike scoring is the most
+# expensive thing in this pipeline — candidate generation is roughly days x
+# neighbourhood^2, and a neighbourhood is ~114 articles — while the clusters it produces
+# change slowly and are most useful recent. The full archive stays available by hand:
+#   python scripts/analyze-correlations.py            # every year
+YEAR=$(date +%Y)
+echo "==> [6/9] Co-spike correlations (${YEAR} and the two prior years)"
+python scripts/analyze-correlations.py --years $((YEAR - 2)) $((YEAR - 1)) "$YEAR"
+
+echo "==> [7/9] All-time report + index"
+python scripts/generate-all-time-report.py
+
+echo "==> [8/9] Operational dashboard"
 python scripts/generate-dashboard.py --days 90
 
-echo "==> [7/7] Publish to GCS"
+echo "==> [9/9] Publish to GCS"
 python scripts/upload-to-gcs.py --all --execute
 
 echo "==> Daily run complete"

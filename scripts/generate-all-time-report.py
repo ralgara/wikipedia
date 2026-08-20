@@ -267,6 +267,24 @@ def generate_index_html(df: pd.DataFrame) -> str:
             '</div>'
         )
 
+    bands_tile = ''
+    if (REPORTS_DIR / 'bands.html').exists():
+        bands_tile = (
+            '<div class="metric">'
+            '<div class="metric-value"><a href="bands.html">Bands →</a></div>'
+            '<div class="metric-label">Tiered Analysis</div>'
+            '</div>'
+        )
+
+    correlations_tile = ''
+    if (REPORTS_DIR / 'correlations.html').exists():
+        correlations_tile = (
+            '<div class="metric">'
+            '<div class="metric-value"><a href="correlations.html">Correlations →</a></div>'
+            '<div class="metric-label">Co-Spike Clusters</div>'
+            '</div>'
+        )
+
     body = f'''
     <section class="section">
       <h2>Archive Coverage</h2>
@@ -276,6 +294,8 @@ def generate_index_html(df: pd.DataFrame) -> str:
         <div class="metric"><div class="metric-value">{gaps}</div><div class="metric-label">Missing Days</div></div>
         <div class="metric"><div class="metric-value"><a href="all-time.html">All Time →</a></div><div class="metric-label">Decade Overview</div></div>
         {longitudinal_tile}
+        {bands_tile}
+        {correlations_tile}
         {dashboard_tile}
       </div>
     </section>
